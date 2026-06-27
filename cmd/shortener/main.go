@@ -26,7 +26,7 @@ func generateShortKey() string {
 func main() {
 
 	// Тестовые данные для отладки
-	linkBase["EwHXdJfB"] = "https://practicum.yandex.ru/"
+	//linkBase["EwHXdJfB"] = "https://practicum.yandex.ru/"
 
 	if err := run(); err != nil {
 		panic(err)
