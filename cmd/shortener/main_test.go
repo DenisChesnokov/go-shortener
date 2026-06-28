@@ -12,6 +12,8 @@ func TestWebhook(t *testing.T) {
 	// Инициализируем карту начальными данными для теста GET
 	linkBase["testKey"] = "https://example.com"
 
+	r := run()
+
 	// Структура для описания тестовых случаев
 	type want struct {
 		statusCode  int
@@ -93,7 +95,7 @@ func TestWebhook(t *testing.T) {
 			// ResponseRecorder для записи ответа сервера
 			w := httptest.NewRecorder()
 
-			webhook(w, req)
+			r.ServeHTTP(w, req)
 			res := w.Result()
 			defer res.Body.Close()
 
