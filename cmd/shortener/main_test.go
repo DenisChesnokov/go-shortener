@@ -9,6 +9,13 @@ import (
 )
 
 func TestWebhook(t *testing.T) {
+
+	// Инициализируем Cfg дефолтными значениями, чтобы тесты не падали
+	Cfg = &Config{
+		ServerAddress: "localhost:8080",
+		BaseURL:       "http://localhost:8080",
+	}
+
 	// Инициализируем карту начальными данными для теста GET
 	linkBase["testKey"] = "https://example.com"
 

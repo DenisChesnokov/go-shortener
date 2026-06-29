@@ -55,10 +55,8 @@ func makeShortLink(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 
 	// возвращаем  итоговую ссылку
-	shortURL := "http://localhost:8080/" + key
+	shortURL := Cfg.BaseURL + "/" + key
 	w.Write([]byte(shortURL))
-
-	return
 }
 
 func getFullLink(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +81,6 @@ func getFullLink(w http.ResponseWriter, r *http.Request) {
 
 	// установим правильный код ответа 307
 	w.WriteHeader(http.StatusTemporaryRedirect)
-
-	return
 }
 
 // функция run будет полезна при инициализации зависимостей сервера перед запуском
@@ -106,8 +102,11 @@ func run() *chi.Mux {
 }
 
 func main() {
+
+	Init()
+
 	r := run()
-	if err := http.ListenAndServe(`:8080`, r); err != nil {
+	if err := http.ListenAndServe(Cfg.ServerAddress, r); err != nil {
 		panic(err)
 	}
 }
