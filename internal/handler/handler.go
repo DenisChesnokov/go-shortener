@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
@@ -35,6 +36,7 @@ func (h *Handler) PostShorten(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), longURL)
 	if err != nil {
+		log.Printf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -59,6 +61,7 @@ func (h *Handler) GetRedirect(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
+		log.Printf("resolve failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

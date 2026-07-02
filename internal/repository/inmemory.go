@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -51,7 +52,7 @@ func (r *InMemory) Get(ctx context.Context, key string) (string, error) {
 
 	longURL, exists := r.data[key]
 	if !exists {
-		return "", ErrNotFound
+		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
 
 	return longURL, nil
