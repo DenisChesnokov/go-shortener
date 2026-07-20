@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/DenisChesnokov/go-shortener.git/internal/logger"
 )
 
 // NewRouter собирает и возвращает chi-роутер с привязанными обработчиками.
@@ -12,15 +14,15 @@ import (
 func NewRouter(h *Handler) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+	r.NotFound(logger.RequestLogger(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	})
-	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+	}))
+	r.MethodNotAllowed(logger.RequestLogger(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	})
+	}))
 
-	r.Post("/", h.PostShorten)
-	r.Get("/{shortLink}", h.GetRedirect)
+	r.Post("/", logger.RequestLogger(h.PostShorten))
+	r.Get("/{shortLink}", logger.RequestLogger(h.GetRedirect))
 
 	return r
 }

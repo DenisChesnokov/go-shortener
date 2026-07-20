@@ -6,6 +6,7 @@ import (
 
 	"github.com/DenisChesnokov/go-shortener.git/internal/config"
 	"github.com/DenisChesnokov/go-shortener.git/internal/handler"
+	"github.com/DenisChesnokov/go-shortener.git/internal/logger"
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
 )
@@ -18,6 +19,11 @@ func main() {
 	cfg.ParseFlags()
 	// Перезаписываем значения если есть переменные окружения
 	cfg.ParseEnv()
+
+	if err := logger.Initialize("info"); err != nil {
+		log.Fatal(err)
+	}
+	defer logger.Sync()
 
 	repo := repository.NewInMemory()
 	svc := service.New(repo, cfg.BaseURL)
