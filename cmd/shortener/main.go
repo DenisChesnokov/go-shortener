@@ -12,8 +12,12 @@ import (
 
 // инъекция зависимостей и запуск HTTP-сервера
 func main() {
+	// Сначала создаем конфиг с дефолтными значениями
 	cfg := config.New()
+	// Перезаписываем значения если заданы флаги
 	cfg.ParseFlags()
+	// Перезаписываем значения если есть переменные окружения
+	cfg.ParseEnv()
 
 	repo := repository.NewInMemory()
 	svc := service.New(repo, cfg.BaseURL)

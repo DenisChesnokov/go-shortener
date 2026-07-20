@@ -1,6 +1,9 @@
 package config
 
-import "flag"
+import (
+	"flag"
+	"os"
+)
 
 type Config struct {
 	ServerAddress string
@@ -27,4 +30,19 @@ func (c *Config) ParseFlags() {
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "Базовый адрес результирующего сокращённого URL")
 
 	flag.Parse()
+}
+
+// ParseEnv парсит переменные окружения
+func (c *Config) ParseEnv() {
+
+	ServerAddress, exist := os.LookupEnv("SERVER_ADDRESS")
+	if exist {
+		c.ServerAddress = ServerAddress
+	}
+
+	BaseURL, exist := os.LookupEnv("BASE_URL")
+	if exist {
+		c.BaseURL = BaseURL
+	}
+
 }
