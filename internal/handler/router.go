@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/DenisChesnokov/go-shortener.git/internal/logger"
+	"github.com/DenisChesnokov/go-shortener.git/internal/middleware"
 )
 
 // NewRouter собирает и возвращает chi-роутер с привязанными обработчиками.
@@ -14,16 +15,16 @@ import (
 func NewRouter(h *Handler) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.NotFound(logger.RequestLogger(func(w http.ResponseWriter, r *http.Request) {
+	r.NotFound(logger.RequestLogger(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}))
-	r.MethodNotAllowed(logger.RequestLogger(func(w http.ResponseWriter, r *http.Request) {
+	})))
+	r.MethodNotAllowed(logger.RequestLogger(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}))
+	})))
 
-	r.Post("/", logger.RequestLogger(h.PostShorten))
-	r.Get("/{shortLink}", logger.RequestLogger(h.GetRedirect))
-	r.Post("/api/shorten", logger.RequestLogger(h.PostShortenJSON))
+	r.Post("/", logger.RequestLogger(middleware.GzipMiddleware(h.PostShorten)))
+	r.Post("/api/shorten", logger.RequestLogger(middleware.GzipMiddleware(h.PostShortenJSON)))
+	r.Get("/{shortLink}", logger.RequestLogger(middleware.GzipMiddleware(h.GetRedirect)))
 
 	return r
 }
