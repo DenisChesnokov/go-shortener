@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
 
+	"github.com/DenisChesnokov/go-shortener.git/internal/model"
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,34 @@ type Handler struct {
 func New(svc *service.Shortener) *Handler {
 	return &Handler{
 		svc: svc,
+	}
+}
+
+// PostShortenJSON обрабатывает POST /api/shorten: принимает JSON {"url":"..."},
+// возвращает JSON {"result":"<short_url>"} с кодом 201 Created.
+func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
+	var req model.ShortenRequest
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	shortURL, err := h.svc.Shorten(r.Context(), req.URL)
+	if err != nil {
+		log.Printf("shorten failed: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	resp := model.ShortenResponse{Result: shortURL}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		log.Printf("encode response failed: %v", err)
+		return
 	}
 }
 

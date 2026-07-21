@@ -23,6 +23,7 @@ func NewRouter(h *Handler) *chi.Mux {
 
 	r.Post("/", logger.RequestLogger(h.PostShorten))
 	r.Get("/{shortLink}", logger.RequestLogger(h.GetRedirect))
+	r.Post("/api/shorten", logger.RequestLogger(h.PostShortenJSON))
 
 	return r
 }
