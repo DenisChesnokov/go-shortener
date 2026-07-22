@@ -60,3 +60,15 @@ func TestPriority(t *testing.T) {
 		t.Errorf("BaseURL: получили %q, хотим %q", cfg.BaseURL, "http://env.example.com")
 	}
 }
+
+func TestParseEnv_FileStoragePath(t *testing.T) {
+	t.Setenv("FILE_STORAGE_PATH", "/tmp/test-storage.json")
+
+	cfg := New()
+	cfg.ParseEnv()
+
+	if cfg.FileStoragePath != "/tmp/test-storage.json" {
+		t.Errorf("FileStoragePath: получили %q, хотим %q",
+			cfg.FileStoragePath, "/tmp/test-storage.json")
+	}
+}

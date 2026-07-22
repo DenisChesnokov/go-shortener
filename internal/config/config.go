@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	ServerAddress string
-	BaseURL       string
-	LogLevel      string
+	ServerAddress   string
+	BaseURL         string
+	LogLevel        string
+	FileStoragePath string
 }
 
 /*
@@ -19,9 +20,10 @@ Cоздаёт конфигурацию со значениями по умолч
 */
 func New() *Config {
 	return &Config{
-		ServerAddress: "localhost:8080",
-		BaseURL:       "http://localhost:8080",
-		LogLevel:      "info",
+		ServerAddress:   "localhost:8080",
+		BaseURL:         "http://localhost:8080",
+		LogLevel:        "info",
+		FileStoragePath: "",
 	}
 }
 
@@ -31,6 +33,7 @@ func (c *Config) ParseFlags() {
 	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "Адрес запуска HTTP-сервера")
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "Базовый адрес результирующего сокращённого URL")
 	flag.StringVar(&c.LogLevel, "l", "info", "log level")
+	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
 
 	flag.Parse()
 }
@@ -53,4 +56,8 @@ func (c *Config) ParseEnv() {
 		c.LogLevel = LogLevel
 	}
 
+	FileStoragePath, exist := os.LookupEnv("FILE_STORAGE_PATH")
+	if exist && FileStoragePath != "" {
+		c.FileStoragePath = FileStoragePath
+	}
 }

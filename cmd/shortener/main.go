@@ -25,7 +25,19 @@ func main() {
 	}
 	defer logger.Sync()
 
-	repo := repository.NewInMemory()
+	var repo service.Repository
+	// Если задан путь к файлу — используем файл
+	// Иначе — in-memory
+	if cfg.FileStoragePath != "" {
+		fs, err := repository.NewFileStorage(cfg.FileStoragePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		repo = fs
+	} else {
+		repo = repository.NewInMemory()
+	}
+
 	svc := service.New(repo, cfg.BaseURL)
 	h := handler.New(svc)
 	r := handler.NewRouter(h)
