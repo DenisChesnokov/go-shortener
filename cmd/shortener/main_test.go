@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/DenisChesnokov/go-shortener.git/internal/model"
+	"go.uber.org/zap"
 )
 
 // newTestRouter создаёт изолированный набор зависимостей (хранилище, сервис,
@@ -27,8 +28,9 @@ import (
 func newTestRouter() (*chi.Mux, *repository.InMemory) {
 	repo := repository.NewInMemory()
 	svc := service.New(repo, "http://localhost:8080")
-	h := handler.New(svc)
-	return handler.NewRouter(h), repo
+	log := zap.NewNop().Sugar() // <-- no-op логер для тестов
+	h := handler.New(svc, log)
+	return handler.NewRouter(h, log), repo
 }
 
 func TestWebhook(t *testing.T) {
@@ -166,6 +168,16 @@ func TestAPIShorten(t *testing.T) {
 		{
 			name:     "Пустое тело",
 			body:     ``,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "Пустой URL в JSON",
+			body:     `{"url":""}`,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "Отсутствует поле url",
+			body:     `{"other":"value"}`,
 			wantCode: http.StatusBadRequest,
 		},
 	}

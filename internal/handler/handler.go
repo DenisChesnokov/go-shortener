@@ -11,15 +11,18 @@ import (
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 )
 
 type Handler struct {
 	svc *service.Shortener
+	log *zap.SugaredLogger
 }
 
-func New(svc *service.Shortener) *Handler {
+func New(svc *service.Shortener, log *zap.SugaredLogger) *Handler {
 	return &Handler{
 		svc: svc,
+		log: log,
 	}
 }
 
@@ -29,6 +32,12 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 	var req model.ShortenRequest
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	// проверка пустого URL
+	if req.URL == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -66,7 +75,7 @@ func (h *Handler) PostShorten(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), longURL)
 	if err != nil {
-		log.Printf("shorten failed: %v", err)
+		h.log.Errorf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

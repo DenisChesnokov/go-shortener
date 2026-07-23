@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,21 +66,30 @@ func TestFileStorage_PersistsAcrossInstances(t *testing.T) {
 	}
 
 	// UUID продолжается — new запись должна получить uuid=3
-	fs2.Save(context.Background(), "key3", "http://mail.ru")
-	// читаем raw файл и проверяем, что uuids 1,2,3 присутствуют
-	data, err := os.ReadFile(path)
+	if err := fs2.Save(context.Background(), "key3", "http://mail.ru"); err != nil {
+		t.Fatalf("Save key3: %v", err)
+	}
+
+	// Читаем raw файл и проверяем, что uuids 1,2,3 присутствуют.
+	// Файл в формате JSONL — десериализуем через json.Decoder.
+	file, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+		t.Fatalf("Open: %v", err)
 		return
 	}
+	defer file.Close()
 
-	var records []FileRecord
-	if err := json.Unmarshal(data, &records); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-
-	uuids := make(map[string]bool, len(records))
-	for _, r := range records {
+	uuids := make(map[string]bool)
+	dec := json.NewDecoder(file)
+	for {
+		var r FileRecord
+		if err := dec.Decode(&r); err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			// fallback на io.EOF для строгости
+			break
+		}
 		uuids[r.UUID] = true
 	}
 	for _, want := range []string{"1", "2", "3"} {
@@ -102,28 +112,24 @@ func TestFileStorage_FileFormat(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 		return
 	}
-	// Десериализуем — проверка и структуры, и формата.
-	var records []FileRecord
-	if err := json.Unmarshal(data, &records); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
+	body := string(data)
+
+	// Каждая запись — отдельный JSON-объект на своей строке (JSONL).
+	// Проверяем, что в файле ровно одна запись и есть все три поля.
+	for _, want := range []string{
+		`"uuid":"1"`,
+		`"short_url":"key1"`,
+		`"original_url":"http://example.com"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("файл не содержит %q.\nСодержимое файла:\n%s", want, body)
+			return
+		}
 	}
 
-	if len(records) != 1 {
-		t.Errorf("кол-во записей: %d, хотим 1", len(records))
-		return
-	}
-
-	r := records[0]
-	if r.UUID != "1" {
-		t.Errorf("UUID: получили %q, хотим %q", r.UUID, "1")
-		return
-	}
-	if r.ShortURL != "key1" {
-		t.Errorf("ShortURL: получили %q, хотим %q", r.ShortURL, "key1")
-		return
-	}
-	if r.OriginalURL != "http://example.com" {
-		t.Errorf("OriginalURL: получили %q, хотим %q", r.OriginalURL, "http://example.com")
+	trimmed := strings.TrimSpace(body)
+	if strings.HasPrefix(trimmed, "[") || strings.HasSuffix(trimmed, "]") {
+		t.Errorf("файл выглядит как JSON-массив, а ожидается JSONL.\nСодержимое файла:\n%s", body)
 		return
 	}
 }

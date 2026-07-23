@@ -11,23 +11,19 @@ import (
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
 )
 
-// инъекция зависимостей и запуск HTTP-сервера
 func main() {
-	// Сначала создаем конфиг с дефолтными значениями
 	cfg := config.New()
-	// Перезаписываем значения если заданы флаги
 	cfg.ParseFlags()
-	// Перезаписываем значения если есть переменные окружения
 	cfg.ParseEnv()
 
-	if err := logger.Initialize("info"); err != nil {
+	// Создаём логер и прокидываем во все компоненты.
+	appLog, err := logger.New(cfg.LogLevel)
+	if err != nil {
 		log.Fatal(err)
 	}
-	defer logger.Sync()
+	defer appLog.Sync()
 
 	var repo service.Repository
-	// Если задан путь к файлу — используем файл
-	// Иначе — in-memory
 	if cfg.FileStoragePath != "" {
 		fs, err := repository.NewFileStorage(cfg.FileStoragePath)
 		if err != nil {
@@ -39,8 +35,8 @@ func main() {
 	}
 
 	svc := service.New(repo, cfg.BaseURL)
-	h := handler.New(svc)
-	r := handler.NewRouter(h)
+	h := handler.New(svc, appLog)
+	r := handler.NewRouter(h, appLog)
 
 	if err := http.ListenAndServe(cfg.ServerAddress, r); err != nil {
 		log.Fatal(err)

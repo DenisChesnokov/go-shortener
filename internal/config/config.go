@@ -32,7 +32,7 @@ func New() *Config {
 func (c *Config) ParseFlags() {
 	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "Адрес запуска HTTP-сервера")
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "Базовый адрес результирующего сокращённого URL")
-	flag.StringVar(&c.LogLevel, "l", "info", "log level")
+	flag.StringVar(&c.LogLevel, "l", c.LogLevel, "log level")
 	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
 
 	flag.Parse()
@@ -41,23 +41,23 @@ func (c *Config) ParseFlags() {
 // ParseEnv парсит переменные окружения
 func (c *Config) ParseEnv() {
 
-	ServerAddress, exist := os.LookupEnv("SERVER_ADDRESS")
-	if exist && ServerAddress != "" {
-		c.ServerAddress = ServerAddress
+	serverAddress, exist := os.LookupEnv("SERVER_ADDRESS")
+	if exist && serverAddress != "" {
+		c.ServerAddress = serverAddress
 	}
 
-	BaseURL, exist := os.LookupEnv("BASE_URL")
-	if exist && BaseURL != "" {
-		c.BaseURL = BaseURL
+	baseURL, exist := os.LookupEnv("BASE_URL")
+	if exist && baseURL != "" {
+		c.BaseURL = baseURL
 	}
 
-	LogLevel, exist := os.LookupEnv("LOG_LEVEL")
-	if exist && LogLevel != "" {
-		c.LogLevel = LogLevel
+	logLevel, exist := os.LookupEnv("LOG_LEVEL")
+	if exist && logLevel != "" {
+		c.LogLevel = logLevel
 	}
 
-	FileStoragePath, exist := os.LookupEnv("FILE_STORAGE_PATH")
-	if exist && FileStoragePath != "" {
-		c.FileStoragePath = FileStoragePath
+	fileStoragePath, exist := os.LookupEnv("FILE_STORAGE_PATH")
+	if exist && fileStoragePath != "" {
+		c.FileStoragePath = fileStoragePath
 	}
 }

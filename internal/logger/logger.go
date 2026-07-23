@@ -7,17 +7,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// По аналогии с теорией для скилов Алисы
-
-// sugar — синглтон-логер. По умолчанию no-op, чтобы код не падал,
-// если Initialize не вызвана (например, в тестах).
-var sugar *zap.SugaredLogger = zap.NewNop().Sugar()
-
-// Initialize инициализирует синглтон логера с заданным уровнем.
-func Initialize(level string) error {
+// New создаёт и настраивает SugaredLogger с заданным уровнем.
+func New(level string) (*zap.SugaredLogger, error) {
 	lvl, err := zap.ParseAtomicLevel(level)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	cfg := zap.NewProductionConfig()
@@ -25,31 +19,23 @@ func Initialize(level string) error {
 
 	zl, err := cfg.Build()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	sugar = zl.Sugar()
-	return nil
+	return zl.Sugar(), nil
 }
 
-// Sync очищает буфера логера. Должна вызываться в main через defer.
-func Sync() error {
-	return sugar.Sync()
+// responseData хранит сведения об ответе
+type responseData struct {
+	status int
+	size   int
 }
 
-type (
-	// responseData хранит сведения об ответе
-	responseData struct {
-		status int
-		size   int
-	}
-
-	// loggingResponseWriter перехватывает запись ответа
-	loggingResponseWriter struct {
-		http.ResponseWriter // встраиваем оригинальный http.ResponseWriter
-		responseData        *responseData
-	}
-)
+// loggingResponseWriter перехватывает запись ответа
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	responseData *responseData
+}
 
 func (r *loggingResponseWriter) Write(b []byte) (int, error) {
 	size, err := r.ResponseWriter.Write(b)
@@ -62,17 +48,13 @@ func (r *loggingResponseWriter) WriteHeader(statusCode int) {
 	r.responseData.status = statusCode
 }
 
-// RequestLogger — middleware-логер для входящих HTTP-запросов.
-// Принимает http.HandlerFunc и возвращает http.HandlerFunc,
-// что позволяет использовать её с chi-методами r.Post/r.Get/r.NotFound/r.MethodNotAllowed.
-func RequestLogger(h http.HandlerFunc) http.HandlerFunc {
+// RequestLogger — middleware для логирования запросов и ответов.
+// Принимает логер параметром — без глобального состояния.
+func RequestLogger(h http.HandlerFunc, log *zap.SugaredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		responseData := &responseData{
-			status: 0,
-			size:   0,
-		}
+		responseData := &responseData{status: 0, size: 0}
 		lw := loggingResponseWriter{
 			ResponseWriter: w,
 			responseData:   responseData,
@@ -81,7 +63,7 @@ func RequestLogger(h http.HandlerFunc) http.HandlerFunc {
 
 		duration := time.Since(start)
 
-		sugar.Infoln(
+		log.Infoln(
 			"uri", r.RequestURI,
 			"method", r.Method,
 			"status", responseData.status,

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"strconv"
 	"sync"
@@ -22,14 +24,21 @@ type FileStorage struct {
 	data     map[string]FileRecord
 	counter  int // счетчик для генерации UUID
 	filePath string
+	file     *os.File
 }
 
 // NewFileStorage создаёт хранилище и загружает существующие данные из файла.
 // Если файл не существует — начинается с пустого хранилища.
 func NewFileStorage(filePath string) (*FileStorage, error) {
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
+
 	fs := &FileStorage{
 		data:     make(map[string]FileRecord),
 		filePath: filePath,
+		file:     file,
 	}
 	if err := fs.load(); err != nil {
 		return nil, err
@@ -39,35 +48,32 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 
 // load читает файл и восстанавливает данные в память.
 func (fs *FileStorage) load() error {
-	data, err := os.ReadFile(fs.filePath)
+	file, err := os.OpenFile(fs.filePath, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // файла нет, начнём с пустого хранилища
-		}
 		return err
 	}
-	if len(data) == 0 {
-		return nil // пустой файл, тоже норм
-	}
+	defer file.Close()
 
-	var records []FileRecord
-	if err := json.Unmarshal(data, &records); err != nil {
-		return err
-	}
-
+	decoder := json.NewDecoder(file)
 	maxUUID := 0
-	for _, r := range records {
+	for {
+		var r FileRecord
+		if err := decoder.Decode(&r); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
 		fs.data[r.ShortURL] = r
 		if u, err := strconv.Atoi(r.UUID); err == nil && u > maxUUID {
 			maxUUID = u
 		}
 	}
-	fs.counter = maxUUID // продолжаем нумерацию с максимума
+	fs.counter = maxUUID
 	return nil
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-// Обновляет map в памяти и атомарно перезаписывает файл.
 func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -77,13 +83,13 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
 	}
 
 	fs.counter++
-	fs.data[key] = FileRecord{
+	record := FileRecord{
 		UUID:        strconv.Itoa(fs.counter),
 		ShortURL:    key,
 		OriginalURL: longURL,
 	}
-
-	return fs.persist()
+	fs.data[key] = record
+	return fs.write(record)
 }
 
 // Get возвращает длинный URL по короткому ключу.
@@ -98,22 +104,17 @@ func (fs *FileStorage) Get(ctx context.Context, key string) (string, error) {
 	return record.OriginalURL, nil
 }
 
-// persist перезаписывает файл со всеми записями.
-// пишем во временный файл, затем os.Rename.
-func (fs *FileStorage) persist() error {
-	records := make([]FileRecord, 0, len(fs.data))
-	for _, r := range fs.data {
-		records = append(records, r)
-	}
-
-	data, err := json.MarshalIndent(records, "", " ")
+// append одной записи
+func (fs *FileStorage) write(record FileRecord) error {
+	data, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
+	data = append(data, '\n') // <-- разделитель JSONL
+	_, err = fs.file.Write(data)
+	return err
+}
 
-	tmpPath := fs.filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0666); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, fs.filePath)
+func (fs *FileStorage) Close() error {
+	return fs.file.Close()
 }

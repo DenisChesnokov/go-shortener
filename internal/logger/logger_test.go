@@ -10,8 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TestRequestLogger_PassThrough проверяет, что middleware не искажает
-// ответ хендлера: статус и тело доходят до клиента без изменений.
 func TestRequestLogger_PassThrough(t *testing.T) {
 	body := "http://localhost:8080/abc"
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -19,10 +17,11 @@ func TestRequestLogger_PassThrough(t *testing.T) {
 		w.Write([]byte(body))
 	})
 
+	log := zap.NewNop().Sugar() // <-- no-op логер
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("https://yandex.ru"))
 	rec := httptest.NewRecorder()
 
-	RequestLogger(handler).ServeHTTP(rec, req)
+	RequestLogger(handler, log).ServeHTTP(rec, req)
 
 	res := rec.Result()
 	defer res.Body.Close()
@@ -84,22 +83,14 @@ func TestLoggingResponseWriter_CapturesStatusAndSize(t *testing.T) {
 	}
 }
 
-// TestInitialize_ValidLevel проверяет, что Initialize с корректным уровнем
-// возвращает nil и не падает.
-func TestInitialize_ValidLevel(t *testing.T) {
-	t.Cleanup(func() { sugar = zap.NewNop().Sugar() })
-
-	if err := Initialize("info"); err != nil {
+func TestNew_ValidLevel(t *testing.T) {
+	if _, err := New("info"); err != nil {
 		t.Errorf("ожидали nil, получили %v", err)
 	}
 }
 
-// TestInitialize_InvalidLevel проверяет, что Initialize с некорректным
-// уровнем возвращает ошибку.
-func TestInitialize_InvalidLevel(t *testing.T) {
-	t.Cleanup(func() { sugar = zap.NewNop().Sugar() })
-
-	if err := Initialize("invalid"); err == nil {
+func TestNew_InvalidLevel(t *testing.T) {
+	if _, err := New("invalid"); err == nil {
 		t.Error("ожидали ошибку, получили nil")
 	}
 }
