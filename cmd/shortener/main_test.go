@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -13,6 +14,12 @@ import (
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
 
 	"github.com/go-chi/chi/v5"
+
+	"encoding/json"
+	"strings"
+
+	"github.com/DenisChesnokov/go-shortener.git/internal/model"
+	"go.uber.org/zap"
 )
 
 // newTestRouter создаёт изолированный набор зависимостей (хранилище, сервис,
@@ -21,8 +28,9 @@ import (
 func newTestRouter() (*chi.Mux, *repository.InMemory) {
 	repo := repository.NewInMemory()
 	svc := service.New(repo, "http://localhost:8080")
-	h := handler.New(svc)
-	return handler.NewRouter(h), repo
+	log := zap.NewNop().Sugar() // <-- no-op логер для тестов
+	h := handler.New(svc, log)
+	return handler.NewRouter(h, log), repo
 }
 
 func TestWebhook(t *testing.T) {
@@ -132,6 +140,207 @@ func TestWebhook(t *testing.T) {
 				}
 				if string(got) != tt.wantBody {
 					t.Errorf("Тело ответа не совпадает: получили %q, хотим %q", string(got), tt.wantBody)
+					return
+				}
+			}
+		})
+	}
+}
+
+func TestAPIShorten(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+		wantType string
+	}{
+		{
+			name:     "Успешный POST /api/shorten",
+			body:     `{"url":"https://yandex.ru"}`,
+			wantCode: http.StatusCreated,
+			wantType: "application/json",
+		},
+		{
+			name:     "Невалидный JSON",
+			body:     `not a json`,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "Пустое тело",
+			body:     ``,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "Пустой URL в JSON",
+			body:     `{"url":""}`,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "Отсутствует поле url",
+			body:     `{"other":"value"}`,
+			wantCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := newTestRouter()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.wantCode {
+				t.Errorf("status: получили %d, хотим %d", res.StatusCode, tt.wantCode)
+				return
+			}
+
+			if tt.wantType != "" {
+				if got := res.Header.Get("Content-Type"); got != tt.wantType {
+					t.Errorf("Content-Type: получили %q, хотим %q", got, tt.wantType)
+					return
+				}
+			}
+
+			// Дополнительно: для успешного кейса проверяем непустой result
+			if tt.wantCode == http.StatusCreated {
+				var resp model.ShortenResponse
+				if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+					t.Errorf("не удалось десериализовать ответ: %v", err)
+					return
+				}
+				if resp.Result == "" {
+					t.Error("ожидали непустой result, получили пустой")
+					return
+				}
+			}
+		})
+	}
+}
+
+// TestGzipCompression проверяет двунаправленную gzip-обработку.
+func TestGzipCompression(t *testing.T) {
+	tests := []struct {
+		name            string
+		path            string
+		acceptEncoding  string
+		contentEncoding string
+		body            string
+		gzipBody        bool
+		wantCode        int
+		wantEncoding    string
+		wantType        string
+	}{
+		{
+			name:           "accepts_gzip_response_json",
+			path:           "/api/shorten",
+			acceptEncoding: "gzip",
+			body:           `{"url":"https://yandex.ru"}`,
+			wantCode:       http.StatusCreated,
+			wantEncoding:   "gzip",
+			wantType:       "application/json",
+		},
+		{
+			name:         "sends_gzip_request",
+			path:         "/api/shorten",
+			body:         `{"url":"https://yandex.ru"}`,
+			gzipBody:     true,
+			wantCode:     http.StatusCreated,
+			wantEncoding: "", // клиент не прислал Accept-Encoding, ответ несжатый
+			wantType:     "application/json",
+		},
+		{
+			name:           "text_plain_not_compressed",
+			path:           "/",
+			acceptEncoding: "gzip",
+			body:           "https://yandex.ru",
+			wantCode:       http.StatusCreated,
+			wantEncoding:   "", // text/plain НЕ сжимаем по условию задачи
+			wantType:       "text/plain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := newTestRouter()
+
+			var bodyReader io.Reader
+			if tt.gzipBody {
+				// Готовим сжатое тело запроса
+				buf := bytes.NewBuffer(nil)
+				zb := gzip.NewWriter(buf)
+				zb.Write([]byte(tt.body))
+				zb.Close()
+				bodyReader = buf
+			} else if tt.body != "" {
+				bodyReader = strings.NewReader(tt.body)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, tt.path, bodyReader)
+			if tt.acceptEncoding != "" {
+				req.Header.Set("Accept-Encoding", tt.acceptEncoding)
+			}
+			if tt.gzipBody {
+				req.Header.Set("Content-Encoding", "gzip")
+			}
+
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.wantCode {
+				t.Errorf("status: получили %d, хотим %d", res.StatusCode, tt.wantCode)
+				return
+			}
+
+			if got := res.Header.Get("Content-Encoding"); got != tt.wantEncoding {
+				t.Errorf("Content-Encoding: получили %q, хотим %q", got, tt.wantEncoding)
+				return
+			}
+
+			if got := res.Header.Get("Content-Type"); got != tt.wantType {
+				t.Errorf("Content-Type: получили %q, хотим %q", got, tt.wantType)
+				return
+			}
+
+			// Проверяем тело: если response сжат, надо сначала разжать
+			var body []byte
+			if res.Header.Get("Content-Encoding") == "gzip" {
+				zr, err := gzip.NewReader(res.Body)
+				if err != nil {
+					t.Errorf("не удалось создать gzip.Reader: %v", err)
+					return
+				}
+				body, err = io.ReadAll(zr)
+				if err != nil {
+					t.Errorf("не удалось прочитать сжатый ответ: %v", err)
+					return
+				}
+			} else {
+				body, _ = io.ReadAll(res.Body)
+			}
+
+			// Проверяем что тело не пустое
+			if len(body) == 0 {
+				t.Error("ожидали непустое тело ответа")
+				return
+			}
+
+			// Для JSON дополнительно — десериализуем
+			if tt.wantType == "application/json" {
+				var resp model.ShortenResponse
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Errorf("не удалось десериализовать JSON: %v (тело: %q)", err, string(body))
+					return
+				}
+				if resp.Result == "" {
+					t.Error("ожидали непустой result")
 					return
 				}
 			}

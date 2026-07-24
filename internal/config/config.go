@@ -1,10 +1,15 @@
 package config
 
-import "flag"
+import (
+	"flag"
+	"os"
+)
 
 type Config struct {
-	ServerAddress string
-	BaseURL       string
+	ServerAddress   string
+	BaseURL         string
+	LogLevel        string
+	FileStoragePath string
 }
 
 /*
@@ -15,8 +20,10 @@ Cоздаёт конфигурацию со значениями по умолч
 */
 func New() *Config {
 	return &Config{
-		ServerAddress: "localhost:8080",
-		BaseURL:       "http://localhost:8080",
+		ServerAddress:   "localhost:8080",
+		BaseURL:         "http://localhost:8080",
+		LogLevel:        "info",
+		FileStoragePath: "",
 	}
 }
 
@@ -25,6 +32,32 @@ func New() *Config {
 func (c *Config) ParseFlags() {
 	flag.StringVar(&c.ServerAddress, "a", c.ServerAddress, "Адрес запуска HTTP-сервера")
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "Базовый адрес результирующего сокращённого URL")
+	flag.StringVar(&c.LogLevel, "l", c.LogLevel, "log level")
+	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
 
 	flag.Parse()
+}
+
+// ParseEnv парсит переменные окружения
+func (c *Config) ParseEnv() {
+
+	serverAddress, exist := os.LookupEnv("SERVER_ADDRESS")
+	if exist && serverAddress != "" {
+		c.ServerAddress = serverAddress
+	}
+
+	baseURL, exist := os.LookupEnv("BASE_URL")
+	if exist && baseURL != "" {
+		c.BaseURL = baseURL
+	}
+
+	logLevel, exist := os.LookupEnv("LOG_LEVEL")
+	if exist && logLevel != "" {
+		c.LogLevel = logLevel
+	}
+
+	fileStoragePath, exist := os.LookupEnv("FILE_STORAGE_PATH")
+	if exist && fileStoragePath != "" {
+		c.FileStoragePath = fileStoragePath
+	}
 }
