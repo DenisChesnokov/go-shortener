@@ -17,13 +17,33 @@ import (
 type Handler struct {
 	svc *service.Shortener
 	log *zap.SugaredLogger
+	pg  *repository.PostgresStorage
 }
 
-func New(svc *service.Shortener, log *zap.SugaredLogger) *Handler {
+func New(svc *service.Shortener, log *zap.SugaredLogger, pg *repository.PostgresStorage) *Handler {
 	return &Handler{
 		svc: svc,
 		log: log,
+		pg:  pg,
 	}
+}
+
+// GetPing обрабатывает GET /ping: проверяет соединение с БД.
+// Возвращает 200 OK при успехе, 500 Internal Server Error при неуспехе.
+func (h *Handler) GetPing(w http.ResponseWriter, r *http.Request) {
+	if h.pg == nil {
+		h.log.Errorf("database not configured")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.pg.Ping(r.Context()); err != nil {
+		h.log.Errorf("ping failed: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // PostShortenJSON обрабатывает POST /api/shorten: принимает JSON {"url":"..."},

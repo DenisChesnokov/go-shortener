@@ -29,7 +29,7 @@ func newTestRouter() (*chi.Mux, *repository.InMemory) {
 	repo := repository.NewInMemory()
 	svc := service.New(repo, "http://localhost:8080")
 	log := zap.NewNop().Sugar() // <-- no-op логер для тестов
-	h := handler.New(svc, log)
+	h := handler.New(svc, log, nil)
 	return handler.NewRouter(h, log), repo
 }
 
@@ -345,5 +345,20 @@ func TestGzipCompression(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPing_NoDatabase(t *testing.T) {
+	r, _ := newTestRouter() // pg == nil
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusInternalServerError)
 	}
 }

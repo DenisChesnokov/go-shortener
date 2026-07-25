@@ -16,6 +16,7 @@ import (
 func NewRouter(h *Handler, log *zap.SugaredLogger) *chi.Mux {
 	r := chi.NewRouter()
 
+	r.Get("/ping", logger.RequestLogger(middleware.GzipMiddleware(h.GetPing), log))
 	r.NotFound(logger.RequestLogger(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}), log))
