@@ -27,13 +27,13 @@ func main() {
 	var pg *repository.PostgresStorage
 
 	if cfg.DatabaseDSN != "" {
-		pg, err = repository.NewPostgres(cfg.DatabaseDSN)
+		pg, err = repository.NewPostgres(cfg.DatabaseDSN, "file://migrations")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer pg.Close()
 
-		repo = repository.NewInMemory()
+		repo = pg
 	} else if cfg.FileStoragePath != "" {
 		fs, err := repository.NewFileStorage(cfg.FileStoragePath)
 		if err != nil {
