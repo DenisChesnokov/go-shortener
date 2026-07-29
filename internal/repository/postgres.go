@@ -96,3 +96,30 @@ func (p *PostgresStorage) Ping(ctx context.Context) error {
 func (p *PostgresStorage) Close() error {
 	return p.db.Close()
 }
+
+// SaveBatch сохраняет множество записей в одной транзакции.
+func (p *PostgresStorage) SaveBatch(ctx context.Context, items map[string]string) error {
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	// defer Rollback безопасен: если Commit уже выполнен, Rollback проигнорируется
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		"INSERT INTO shortener (short_url, original_url) VALUES ($1, $2)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for key, longURL := range items {
+		_, err := stmt.ExecContext(ctx, key, longURL)
+		if err != nil {
+			// При ошибке (например, unique violation) транзакция откатится
+			return err
+		}
+	}
+
+	return tx.Commit()
+}

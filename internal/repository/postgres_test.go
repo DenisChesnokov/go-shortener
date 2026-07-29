@@ -94,3 +94,51 @@ func TestPostgres_Ping(t *testing.T) {
 		t.Errorf("Ping: %v", err)
 	}
 }
+
+func TestPostgres_SaveBatch(t *testing.T) {
+	dsn := os.Getenv("DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("DATABASE_DSN not set, skipping integration test")
+	}
+
+	rootDir, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("failed to get root dir: %v", err)
+	}
+	migrationsPath := "file://" + filepath.Join(rootDir, "migrations")
+
+	pg, err := NewPostgres(dsn, migrationsPath)
+	if err != nil {
+		t.Fatalf("NewPostgres: %v", err)
+	}
+	defer pg.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Очистка
+	_, err = pg.db.ExecContext(ctx, "DELETE FROM shortener")
+	if err != nil {
+		t.Fatalf("failed to clean table: %v", err)
+	}
+
+	items := map[string]string{
+		"batchKey1": "http://example.com",
+		"batchKey2": "http://yandex.ru",
+	}
+
+	if err := pg.SaveBatch(ctx, items); err != nil {
+		t.Errorf("SaveBatch: %v", err)
+		return
+	}
+
+	// Проверяем, что обе записи сохранились
+	got1, err := pg.Get(ctx, "batchKey1")
+	if err != nil || got1 != "http://example.com" {
+		t.Errorf("Get batchKey1: получили %q, err %v", got1, err)
+	}
+	got2, err := pg.Get(ctx, "batchKey2")
+	if err != nil || got2 != "http://yandex.ru" {
+		t.Errorf("Get batchKey2: получили %q, err %v", got2, err)
+	}
+}

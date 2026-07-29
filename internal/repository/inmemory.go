@@ -57,3 +57,22 @@ func (r *InMemory) Get(ctx context.Context, key string) (string, error) {
 
 	return longURL, nil
 }
+
+// SaveBatch сохраняет множество записей атомарно (под одной блокировкой).
+func (r *InMemory) SaveBatch(ctx context.Context, items map[string]string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Сначала проверяем все ключи на коллизии
+	for key := range items {
+		if _, exists := r.data[key]; exists {
+			return ErrAlreadyExists
+		}
+	}
+
+	// Затем сохраняем все
+	for key, longURL := range items {
+		r.data[key] = longURL
+	}
+	return nil
+}

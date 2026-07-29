@@ -11,3 +11,15 @@ type ShortenRequest struct {
 type ShortenResponse struct {
 	Result string `json:"result"`
 }
+
+// BatchRequestItem — элемент запроса POST /api/shorten/batch.
+type BatchRequestItem struct {
+	CorrelationID string `json:"correlation_id"`
+	OriginalURL   string `json:"original_url"`
+}
+
+// BatchResponseItem — элемент ответа POST /api/shorten/batch.
+type BatchResponseItem struct {
+	CorrelationID string `json:"correlation_id"`
+	ShortURL      string `json:"short_url"`
+}

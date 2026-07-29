@@ -118,3 +118,35 @@ func (fs *FileStorage) write(record FileRecord) error {
 func (fs *FileStorage) Close() error {
 	return fs.file.Close()
 }
+
+// SaveBatch сохраняет множество записей атомарно.
+func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	// Проверяем коллизии
+	for key := range items {
+		if _, exists := fs.data[key]; exists {
+			return ErrAlreadyExists
+		}
+	}
+
+	// Добавляем в память + генерим UUID
+	for key, longURL := range items {
+		fs.counter++
+		fs.data[key] = FileRecord{
+			UUID:        strconv.Itoa(fs.counter),
+			ShortURL:    key,
+			OriginalURL: longURL,
+		}
+	}
+
+	// Дописываем каждую запись в файл (JSONL append)
+	for key := range items {
+		record := fs.data[key]
+		if err := fs.write(record); err != nil {
+			return err
+		}
+	}
+	return nil
+}

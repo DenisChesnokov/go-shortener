@@ -27,6 +27,7 @@ func NewRouter(h *Handler, log *zap.SugaredLogger) *chi.Mux {
 	r.Post("/", logger.RequestLogger(middleware.GzipMiddleware(h.PostShorten), log))
 	r.Post("/api/shorten", logger.RequestLogger(middleware.GzipMiddleware(h.PostShortenJSON), log))
 	r.Get("/{shortLink}", logger.RequestLogger(middleware.GzipMiddleware(h.GetRedirect), log))
+	r.Post("/api/shorten/batch", logger.RequestLogger(middleware.GzipMiddleware(h.PostShortenBatch), log))
 
 	return r
 }
