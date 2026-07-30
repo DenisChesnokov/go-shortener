@@ -96,7 +96,7 @@ func TestWebhook(t *testing.T) {
 
 			// изолированное состояние хранилища для текущего кейса
 			if tt.seedKey != "" {
-				if err := repo.Save(context.Background(), tt.seedKey, tt.seedURL); err != nil {
+				if _, err := repo.Save(context.Background(), tt.seedKey, tt.seedURL); err != nil {
 					t.Fatalf("не удалось подготовить хранилище: %v", err)
 					return
 				}

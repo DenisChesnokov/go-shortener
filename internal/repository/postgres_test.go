@@ -40,7 +40,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 	}
 
 	// 1. Успешный Save.
-	if err := pg.Save(ctx, "key1", "http://example.com"); err != nil {
+	if _, err := pg.Save(ctx, "key1", "http://example.com"); err != nil {
 		t.Errorf("Save: %v", err)
 		return
 	}
@@ -56,7 +56,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 	}
 
 	// 3. Попытка сохранить дубликат ключа.
-	err = pg.Save(ctx, "key1", "http://other.com")
+	_, err = pg.Save(ctx, "key1", "http://other.com")
 	if err != ErrAlreadyExists {
 		t.Errorf("ожидали ErrAlreadyExists, получили %v", err)
 	}

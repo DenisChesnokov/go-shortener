@@ -18,8 +18,18 @@ const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 var ErrKeyGeneration = errors.New("failed to generate unique short key")
 
+// AlreadyExistsError возвращается, когда URL уже был сокращён ранее.
+// Содержит готовый короткий URL для ответа клиенту (409 Conflict).
+type AlreadyExistsError struct {
+	ShortURL string
+}
+
+func (e *AlreadyExistsError) Error() string {
+	return "url already exists"
+}
+
 type Repository interface {
-	Save(ctx context.Context, key, longURL string) error
+	Save(ctx context.Context, key, longURL string) (string, error)
 	Get(ctx context.Context, key string) (string, error)
 	SaveBatch(ctx context.Context, items map[string]string) error
 }
@@ -45,7 +55,8 @@ func (s *Shortener) Shorten(ctx context.Context, longURL string) (string, error)
 	for range maxAttempts {
 		key := generateShortKey()
 
-		err := s.repo.Save(ctx, key, longURL)
+		// Save возвращает (existingKey, error)
+		existingKey, err := s.repo.Save(ctx, key, longURL)
 		if err == nil {
 			shortURL, err := url.JoinPath(s.baseURL, key)
 			if err != nil {
@@ -53,11 +64,22 @@ func (s *Shortener) Shorten(ctx context.Context, longURL string) (string, error)
 			}
 			return shortURL, nil
 		}
+
+		// Если ошибка не связана с дубликатом — пробрасываем наверх
 		if !errors.Is(err, repository.ErrAlreadyExists) {
-			// Неожиданная ошибка репозитория — прокидываем наверх.
 			return "", err
 		}
-		// Ключ уже занят — пробуем сгенерировать новый.
+
+		// Если existingKey не пустой — это дубликат оригинального URL
+		if existingKey != "" {
+			shortURL, err := url.JoinPath(s.baseURL, existingKey)
+			if err != nil {
+				return "", err
+			}
+			// Возвращаем доменную ошибку с готовой короткой ссылкой
+			return "", &AlreadyExistsError{ShortURL: shortURL}
+		}
+		// Если existingKey пустой — это коллизия сгенерированного ключа, пробуем снова
 	}
 
 	return "", ErrKeyGeneration

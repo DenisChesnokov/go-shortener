@@ -74,12 +74,12 @@ func (fs *FileStorage) load() error {
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
+func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	if _, exists := fs.data[key]; exists {
-		return ErrAlreadyExists
+		return "", ErrAlreadyExists
 	}
 
 	fs.counter++
@@ -89,7 +89,7 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
 		OriginalURL: longURL,
 	}
 	fs.data[key] = record
-	return fs.write(record)
+	return key, fs.write(record)
 }
 
 // Get возвращает длинный URL по короткому ключу.

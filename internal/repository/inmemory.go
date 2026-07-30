@@ -32,16 +32,16 @@ func NewInMemory() *InMemory {
 
 // Save сохраняет соответствие key -> longURL
 // Если ключ уже занят, возвращает ErrAlreadyExists, не перезаписывая значение
-func (r *InMemory) Save(ctx context.Context, key, longURL string) error {
+func (r *InMemory) Save(ctx context.Context, key, longURL string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, exists := r.data[key]; exists {
-		return ErrAlreadyExists
+		return "", ErrAlreadyExists
 	}
 
 	r.data[key] = longURL
-	return nil
+	return key, nil
 }
 
 // Get возвращает оригинальный URL по короткому ключу

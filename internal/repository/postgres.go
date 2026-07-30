@@ -10,6 +10,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -53,22 +55,34 @@ func NewPostgres(dsn string, migrationsPath string) (*PostgresStorage, error) {
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-// Если ключ уже существует — возвращает ErrAlreadyExists.
-func (p *PostgresStorage) Save(ctx context.Context, key, longURL string) error {
+// Возвращает (key, nil) при успехе.
+// Возвращает ("", ErrAlreadyExists) при коллизии сгенерированного ключа.
+// Возвращает (existingKey, ErrAlreadyExists) при дубликате оригинального URL.
+func (p *PostgresStorage) Save(ctx context.Context, key, longURL string) (string, error) {
 	_, err := p.db.ExecContext(ctx,
 		"INSERT INTO shortener (short_url, original_url) VALUES ($1, $2)",
 		key, longURL)
-
 	if err != nil {
-		// Обработка UNIQUE constraint violation (код 23505 в PostgreSQL).
-		// Приводим ошибку к строке: если в тексте есть "23505", считаем дублем.
-		// Это универсально работает через любой драйвер (pgx v4, v5, lib/pq).
-		if strings.Contains(err.Error(), "23505") {
-			return ErrAlreadyExists
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			// Если нарушение уникальности по original_url (имя индекса idx_original_url)
+			if pgErr.ConstraintName == "idx_original_url" || strings.Contains(pgErr.Message, "idx_original_url") {
+				// Делаем SELECT для получения существующего ключа
+				var existingKey string
+				err = p.db.QueryRowContext(ctx,
+					"SELECT short_url FROM shortener WHERE original_url = $1",
+					longURL).Scan(&existingKey)
+				if err != nil {
+					return "", err
+				}
+				return existingKey, ErrAlreadyExists
+			}
+			// Если нарушение по PK (shortener_pkey) — это коллизия сгенерированного ключа
+			return "", ErrAlreadyExists
 		}
-		return err
+		return "", err
 	}
-	return nil
+	return key, nil
 }
 
 // Get возвращает оригинальный URL по короткому ключу.

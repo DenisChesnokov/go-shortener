@@ -64,7 +64,17 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), req.URL)
 	if err != nil {
-		log.Printf("shorten failed: %v", err)
+		var alreadyExistsErr *service.AlreadyExistsError
+		if errors.As(err, &alreadyExistsErr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict) // 409
+
+			resp := model.ShortenResponse{Result: alreadyExistsErr.ShortURL}
+			enc := json.NewEncoder(w)
+			enc.Encode(resp)
+			return
+		}
+		h.log.Errorf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -75,8 +85,7 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
-		log.Printf("encode response failed: %v", err)
-		return
+		h.log.Errorf("encode response failed: %v", err)
 	}
 }
 
@@ -95,6 +104,12 @@ func (h *Handler) PostShorten(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), longURL)
 	if err != nil {
+		var alreadyExistsErr *service.AlreadyExistsError
+		if errors.As(err, &alreadyExistsErr) {
+			w.WriteHeader(http.StatusConflict) // 409
+			w.Write([]byte(alreadyExistsErr.ShortURL))
+			return
+		}
 		h.log.Errorf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
