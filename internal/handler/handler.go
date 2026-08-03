@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,13 +15,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// Pinger — интерфейс для проверки соединения с хранилищем.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type Handler struct {
 	svc *service.Shortener
 	log *zap.SugaredLogger
-	pg  *repository.PostgresStorage
+	pg  Pinger
 }
 
-func New(svc *service.Shortener, log *zap.SugaredLogger, pg *repository.PostgresStorage) *Handler {
+func New(svc *service.Shortener, log *zap.SugaredLogger, pg Pinger) *Handler {
 	return &Handler{
 		svc: svc,
 		log: log,

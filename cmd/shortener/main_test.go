@@ -25,12 +25,12 @@ import (
 // newTestRouter создаёт изолированный набор зависимостей (хранилище, сервис,
 // хендлер, роутер) для конкретного подтеста, чтобы состояние не утекало
 // между тестами.
-func newTestRouter() (*chi.Mux, *repository.InMemory) {
+func newTestRouter() (*chi.Mux, *repository.InMemory, error) {
 	repo := repository.NewInMemory()
 	svc := service.New(repo, "http://localhost:8080")
-	log := zap.NewNop().Sugar() // <-- no-op логер для тестов
+	log := zap.NewNop().Sugar()
 	h := handler.New(svc, log, nil)
-	return handler.NewRouter(h, log), repo
+	return handler.NewRouter(h, log), repo, nil
 }
 
 func TestWebhook(t *testing.T) {
@@ -92,7 +92,10 @@ func TestWebhook(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, repo := newTestRouter()
+			r, repo, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			// изолированное состояние хранилища для текущего кейса
 			if tt.seedKey != "" {
@@ -184,7 +187,10 @@ func TestAPIShorten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, _ := newTestRouter()
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -266,7 +272,10 @@ func TestGzipCompression(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, _ := newTestRouter()
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			var bodyReader io.Reader
 			if tt.gzipBody {
@@ -349,7 +358,10 @@ func TestGzipCompression(t *testing.T) {
 }
 
 func TestPing_NoDatabase(t *testing.T) {
-	r, _ := newTestRouter() // pg == nil
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	rec := httptest.NewRecorder()
@@ -392,7 +404,10 @@ func TestBatchShorten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, _ := newTestRouter()
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")

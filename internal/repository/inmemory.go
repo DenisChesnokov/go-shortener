@@ -30,6 +30,9 @@ func NewInMemory() *InMemory {
 	}
 }
 
+// no-op для запроса Ping
+func (r *InMemory) Ping(ctx context.Context) error { return nil }
+
 // Save сохраняет соответствие key -> longURL
 // Если ключ уже занят, возвращает ErrAlreadyExists, не перезаписывая значение
 func (r *InMemory) Save(ctx context.Context, key, longURL string) (string, error) {
@@ -37,7 +40,7 @@ func (r *InMemory) Save(ctx context.Context, key, longURL string) (string, error
 	defer r.mu.Unlock()
 
 	if _, exists := r.data[key]; exists {
-		return "", ErrAlreadyExists
+		return "", fmt.Errorf("%w: key %q", ErrAlreadyExists, key)
 	}
 
 	r.data[key] = longURL

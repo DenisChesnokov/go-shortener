@@ -21,7 +21,7 @@ func TestRequestLogger_PassThrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("https://yandex.ru"))
 	rec := httptest.NewRecorder()
 
-	RequestLogger(handler, log).ServeHTTP(rec, req)
+	RequestLogger(log)(handler).ServeHTTP(rec, req)
 
 	res := rec.Result()
 	defer res.Body.Close()

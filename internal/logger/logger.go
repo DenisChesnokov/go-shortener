@@ -50,25 +50,27 @@ func (r *loggingResponseWriter) WriteHeader(statusCode int) {
 
 // RequestLogger — middleware для логирования запросов и ответов.
 // Принимает логер параметром — без глобального состояния.
-func RequestLogger(h http.HandlerFunc, log *zap.SugaredLogger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+func RequestLogger(log *zap.SugaredLogger) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
 
-		responseData := &responseData{status: 0, size: 0}
-		lw := loggingResponseWriter{
-			ResponseWriter: w,
-			responseData:   responseData,
-		}
-		h(&lw, r)
+			responseData := &responseData{status: 0, size: 0}
+			lw := loggingResponseWriter{
+				ResponseWriter: w,
+				responseData:   responseData,
+			}
+			h.ServeHTTP(&lw, r)
 
-		duration := time.Since(start)
+			duration := time.Since(start)
 
-		log.Infoln(
-			"uri", r.RequestURI,
-			"method", r.Method,
-			"status", responseData.status,
-			"duration", duration,
-			"size", responseData.size,
-		)
+			log.Infoln(
+				"uri", r.RequestURI,
+				"method", r.Method,
+				"status", responseData.status,
+				"duration", duration,
+				"size", responseData.size,
+			)
+		})
 	}
 }

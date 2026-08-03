@@ -27,6 +27,9 @@ type FileStorage struct {
 	file     *os.File
 }
 
+// no-op для запроса Ping
+func (fs *FileStorage) Ping(ctx context.Context) error { return nil }
+
 // NewFileStorage создаёт хранилище и загружает существующие данные из файла.
 // Если файл не существует — начинается с пустого хранилища.
 func NewFileStorage(filePath string) (*FileStorage, error) {

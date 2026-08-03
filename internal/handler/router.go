@@ -16,18 +16,25 @@ import (
 func NewRouter(h *Handler, log *zap.SugaredLogger) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Get("/ping", logger.RequestLogger(middleware.GzipMiddleware(h.GetPing), log))
-	r.NotFound(logger.RequestLogger(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}), log))
-	r.MethodNotAllowed(logger.RequestLogger(middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}), log))
+	// Middleware применяются ко всем маршрутам
+	r.Use(logger.RequestLogger(log))
+	r.Use(middleware.GzipMiddleware)
 
-	r.Post("/", logger.RequestLogger(middleware.GzipMiddleware(h.PostShorten), log))
-	r.Post("/api/shorten", logger.RequestLogger(middleware.GzipMiddleware(h.PostShortenJSON), log))
-	r.Get("/{shortLink}", logger.RequestLogger(middleware.GzipMiddleware(h.GetRedirect), log))
-	r.Post("/api/shorten/batch", logger.RequestLogger(middleware.GzipMiddleware(h.PostShortenBatch), log))
+	NotFound := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	})
+	MethodNotAllowed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	})
+
+	r.NotFound(NotFound)
+	r.MethodNotAllowed(MethodNotAllowed)
+
+	r.Get("/ping", h.GetPing)
+	r.Post("/", h.PostShorten)
+	r.Post("/api/shorten", h.PostShortenJSON)
+	r.Get("/{shortLink}", h.GetRedirect)
+	r.Post("/api/shorten/batch", h.PostShortenBatch)
 
 	return r
 }

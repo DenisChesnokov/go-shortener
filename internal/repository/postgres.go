@@ -2,56 +2,54 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // PostgresStorage обёртка вокруг *sql.DB для PostgreSQL.
 type PostgresStorage struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
-// NewPostgres открывает соединение и пингует БД при старте.
 func NewPostgres(dsn string, migrationsPath string) (*PostgresStorage, error) {
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	// golang-migrate определяет драйвер по схеме DSN.
-	// Для pgx ожидается схема "pgx://", заменяем "postgres://".
+	// 1. Миграции (golang-migrate использует DSN напрямую)
 	migrateDSN := strings.Replace(dsn, "postgres://", "pgx://", 1)
 	m, err := migrate.New(migrationsPath, migrateDSN)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		db.Close()
 		m.Close()
 		return nil, err
 	}
 	m.Close()
 
-	// Пинг при старте.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 2. Pool
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
 		return nil, err
 	}
 
-	return &PostgresStorage{db: db}, nil
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	return &PostgresStorage{pool: pool}, nil
 }
 
 // Save сохраняет длинный URL под коротким ключом.
@@ -59,17 +57,15 @@ func NewPostgres(dsn string, migrationsPath string) (*PostgresStorage, error) {
 // Возвращает ("", ErrAlreadyExists) при коллизии сгенерированного ключа.
 // Возвращает (existingKey, ErrAlreadyExists) при дубликате оригинального URL.
 func (p *PostgresStorage) Save(ctx context.Context, key, longURL string) (string, error) {
-	_, err := p.db.ExecContext(ctx,
+	_, err := p.pool.Exec(ctx,
 		"INSERT INTO shortener (short_url, original_url) VALUES ($1, $2)",
 		key, longURL)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			// Если нарушение уникальности по original_url (имя индекса idx_original_url)
-			if pgErr.ConstraintName == "idx_original_url" || strings.Contains(pgErr.Message, "idx_original_url") {
-				// Делаем SELECT для получения существующего ключа
+			if strings.Contains(pgErr.Message, "idx_original_url") {
 				var existingKey string
-				err = p.db.QueryRowContext(ctx,
+				err = p.pool.QueryRow(ctx,
 					"SELECT short_url FROM shortener WHERE original_url = $1",
 					longURL).Scan(&existingKey)
 				if err != nil {
@@ -77,7 +73,6 @@ func (p *PostgresStorage) Save(ctx context.Context, key, longURL string) (string
 				}
 				return existingKey, ErrAlreadyExists
 			}
-			// Если нарушение по PK (shortener_pkey) — это коллизия сгенерированного ключа
 			return "", ErrAlreadyExists
 		}
 		return "", err
@@ -89,11 +84,11 @@ func (p *PostgresStorage) Save(ctx context.Context, key, longURL string) (string
 // Если ключ не найден — возвращает ErrNotFound.
 func (p *PostgresStorage) Get(ctx context.Context, key string) (string, error) {
 	var originalURL string
-	err := p.db.QueryRowContext(ctx,
+	err := p.pool.QueryRow(ctx,
 		"SELECT original_url FROM shortener WHERE short_url = $1",
 		key).Scan(&originalURL)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrNotFound
 		}
 		return "", err
@@ -101,39 +96,35 @@ func (p *PostgresStorage) Get(ctx context.Context, key string) (string, error) {
 	return originalURL, nil
 }
 
-// Ping проверяет соединение с БД.
 func (p *PostgresStorage) Ping(ctx context.Context) error {
-	return p.db.PingContext(ctx)
+	return p.pool.Ping(ctx)
 }
 
-// Close закрывает соединение с БД.
 func (p *PostgresStorage) Close() error {
-	return p.db.Close()
+	p.pool.Close()
+	return nil
 }
 
 // SaveBatch сохраняет множество записей в одной транзакции.
 func (p *PostgresStorage) SaveBatch(ctx context.Context, items map[string]string) error {
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	if len(items) == 0 {
+		return nil
 	}
-	// defer Rollback безопасен: если Commit уже выполнен, Rollback проигнорируется
-	defer tx.Rollback()
 
-	stmt, err := tx.PrepareContext(ctx,
-		"INSERT INTO shortener (short_url, original_url) VALUES ($1, $2)")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for key, longURL := range items {
-		_, err := stmt.ExecContext(ctx, key, longURL)
-		if err != nil {
-			// При ошибке (например, unique violation) транзакция откатится
-			return err
+	// Генерируем multi-row INSERT: INSERT INTO ... VALUES ($1,$2), ($3,$4), ...
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("INSERT INTO shortener (short_url, original_url) VALUES ")
+	args := make([]interface{}, 0, len(items)*2)
+	i := 1
+	for key, url := range items {
+		if i > 1 {
+			queryBuilder.WriteString(", ")
 		}
+		queryBuilder.WriteString(fmt.Sprintf("($%d, $%d)", i, i+1))
+		args = append(args, key, url)
+		i += 2
 	}
 
-	return tx.Commit()
+	_, err := p.pool.Exec(ctx, queryBuilder.String(), args...)
+	return err
 }
