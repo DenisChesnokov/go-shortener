@@ -27,6 +27,9 @@ type FileStorage struct {
 	file     *os.File
 }
 
+// no-op для запроса Ping
+func (fs *FileStorage) Ping(ctx context.Context) error { return nil }
+
 // NewFileStorage создаёт хранилище и загружает существующие данные из файла.
 // Если файл не существует — начинается с пустого хранилища.
 func NewFileStorage(filePath string) (*FileStorage, error) {
@@ -74,12 +77,12 @@ func (fs *FileStorage) load() error {
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
+func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	if _, exists := fs.data[key]; exists {
-		return ErrAlreadyExists
+		return "", ErrAlreadyExists
 	}
 
 	fs.counter++
@@ -89,7 +92,7 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string) error {
 		OriginalURL: longURL,
 	}
 	fs.data[key] = record
-	return fs.write(record)
+	return key, fs.write(record)
 }
 
 // Get возвращает длинный URL по короткому ключу.
@@ -117,4 +120,36 @@ func (fs *FileStorage) write(record FileRecord) error {
 
 func (fs *FileStorage) Close() error {
 	return fs.file.Close()
+}
+
+// SaveBatch сохраняет множество записей атомарно.
+func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	// Проверяем коллизии
+	for key := range items {
+		if _, exists := fs.data[key]; exists {
+			return ErrAlreadyExists
+		}
+	}
+
+	// Добавляем в память + генерим UUID
+	for key, longURL := range items {
+		fs.counter++
+		fs.data[key] = FileRecord{
+			UUID:        strconv.Itoa(fs.counter),
+			ShortURL:    key,
+			OriginalURL: longURL,
+		}
+	}
+
+	// Дописываем каждую запись в файл (JSONL append)
+	for key := range items {
+		record := fs.data[key]
+		if err := fs.write(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }

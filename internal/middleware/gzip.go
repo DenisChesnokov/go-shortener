@@ -91,13 +91,9 @@ func isCompressible(contentType string) bool {
 		strings.Contains(contentType, "text/html")
 }
 
-// GzipMiddleware — HTTP middleware для поддержки gzip.
-// Оборачивает хендлер двунаправленной обработкой:
-//   - если клиент прислал Content-Encoding: gzip — декомпрессирует тело запроса;
-//   - если клиент ждёт Accept-Encoding: gzip — сжимает тело ответа
-//     (только для поддерживаемых Content-Type).
-func GzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// GzipMiddleware — middleware для gzip (chi-совместимая).
+func GzipMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// По умолчанию передаём оригинальный ResponseWriter.
 		ow := w
 
@@ -120,5 +116,5 @@ func GzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
 		}
 
 		h.ServeHTTP(ow, r)
-	}
+	})
 }

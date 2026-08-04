@@ -25,12 +25,12 @@ import (
 // newTestRouter создаёт изолированный набор зависимостей (хранилище, сервис,
 // хендлер, роутер) для конкретного подтеста, чтобы состояние не утекало
 // между тестами.
-func newTestRouter() (*chi.Mux, *repository.InMemory) {
+func newTestRouter() (*chi.Mux, *repository.InMemory, error) {
 	repo := repository.NewInMemory()
 	svc := service.New(repo, "http://localhost:8080")
-	log := zap.NewNop().Sugar() // <-- no-op логер для тестов
-	h := handler.New(svc, log)
-	return handler.NewRouter(h, log), repo
+	log := zap.NewNop().Sugar()
+	h := handler.New(svc, log, nil)
+	return handler.NewRouter(h, log), repo, nil
 }
 
 func TestWebhook(t *testing.T) {
@@ -92,11 +92,14 @@ func TestWebhook(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, repo := newTestRouter()
+			r, repo, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			// изолированное состояние хранилища для текущего кейса
 			if tt.seedKey != "" {
-				if err := repo.Save(context.Background(), tt.seedKey, tt.seedURL); err != nil {
+				if _, err := repo.Save(context.Background(), tt.seedKey, tt.seedURL); err != nil {
 					t.Fatalf("не удалось подготовить хранилище: %v", err)
 					return
 				}
@@ -184,7 +187,10 @@ func TestAPIShorten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, _ := newTestRouter()
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -266,7 +272,10 @@ func TestGzipCompression(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, _ := newTestRouter()
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
 
 			var bodyReader io.Reader
 			if tt.gzipBody {
@@ -342,6 +351,93 @@ func TestGzipCompression(t *testing.T) {
 				if resp.Result == "" {
 					t.Error("ожидали непустой result")
 					return
+				}
+			}
+		})
+	}
+}
+
+func TestPing_NoDatabase(t *testing.T) {
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusInternalServerError)
+	}
+}
+
+func TestBatchShorten(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+		wantLen  int // ожидаемая длина массива в ответе (0 = не проверять)
+	}{
+		{
+			name:     "Успешный batch",
+			body:     `[{"correlation_id":"1","original_url":"https://yandex.ru"},{"correlation_id":"2","original_url":"https://mail.ru"}]`,
+			wantCode: http.StatusCreated,
+			wantLen:  2,
+		},
+		{
+			name:     "Пустой batch",
+			body:     `[]`,
+			wantCode: http.StatusBadRequest,
+			wantLen:  0,
+		},
+		{
+			name:     "Невалидный JSON",
+			body:     `not json`,
+			wantCode: http.StatusBadRequest,
+			wantLen:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _, err := newTestRouter()
+			if err != nil {
+				t.Fatalf("newTestRouter: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.wantCode {
+				t.Errorf("status: получили %d, хотим %d", res.StatusCode, tt.wantCode)
+				return
+			}
+
+			if tt.wantLen > 0 && tt.wantCode == http.StatusCreated {
+				var resp []model.BatchResponseItem
+				if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+					t.Errorf("не удалось десериализовать ответ: %v", err)
+					return
+				}
+				if len(resp) != tt.wantLen {
+					t.Errorf("кол-во записей: получили %d, хотим %d", len(resp), tt.wantLen)
+					return
+				}
+				// Проверяем correlation_id
+				if resp[0].CorrelationID != "1" {
+					t.Errorf("correlation_id[0]: получили %q, хотим %q", resp[0].CorrelationID, "1")
+				}
+				if resp[0].ShortURL == "" {
+					t.Error("short_url[0] пустой")
 				}
 			}
 		})

@@ -20,7 +20,7 @@ func TestFileStorage_SaveAndGet(t *testing.T) {
 	}
 
 	// первый Save
-	if err := fs.Save(context.Background(), "key1", "http://example.com"); err != nil {
+	if _, err := fs.Save(context.Background(), "key1", "http://example.com"); err != nil {
 		t.Errorf("Save: %v", err)
 		return
 	}
@@ -66,7 +66,7 @@ func TestFileStorage_PersistsAcrossInstances(t *testing.T) {
 	}
 
 	// UUID продолжается — new запись должна получить uuid=3
-	if err := fs2.Save(context.Background(), "key3", "http://mail.ru"); err != nil {
+	if _, err := fs2.Save(context.Background(), "key3", "http://mail.ru"); err != nil {
 		t.Fatalf("Save key3: %v", err)
 	}
 

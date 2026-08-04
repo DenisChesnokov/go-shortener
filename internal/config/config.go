@@ -10,6 +10,7 @@ type Config struct {
 	BaseURL         string
 	LogLevel        string
 	FileStoragePath string
+	DatabaseDSN     string
 }
 
 /*
@@ -24,6 +25,7 @@ func New() *Config {
 		BaseURL:         "http://localhost:8080",
 		LogLevel:        "info",
 		FileStoragePath: "",
+		DatabaseDSN:     "",
 	}
 }
 
@@ -34,6 +36,7 @@ func (c *Config) ParseFlags() {
 	flag.StringVar(&c.BaseURL, "b", c.BaseURL, "Базовый адрес результирующего сокращённого URL")
 	flag.StringVar(&c.LogLevel, "l", c.LogLevel, "log level")
 	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
+	flag.StringVar(&c.DatabaseDSN, "d", c.DatabaseDSN, "Адрес подключения к БД")
 
 	flag.Parse()
 }
@@ -59,5 +62,10 @@ func (c *Config) ParseEnv() {
 	fileStoragePath, exist := os.LookupEnv("FILE_STORAGE_PATH")
 	if exist && fileStoragePath != "" {
 		c.FileStoragePath = fileStoragePath
+	}
+
+	dataBaseDSN, exist := os.LookupEnv("DATABASE_DSN")
+	if exist && dataBaseDSN != "" {
+		c.DatabaseDSN = dataBaseDSN
 	}
 }

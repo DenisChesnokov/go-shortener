@@ -24,7 +24,17 @@ func main() {
 	defer appLog.Sync()
 
 	var repo service.Repository
-	if cfg.FileStoragePath != "" {
+	var pg *repository.PostgresStorage
+
+	if cfg.DatabaseDSN != "" {
+		pg, err = repository.NewPostgres(cfg.DatabaseDSN, "file://migrations")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer pg.Close()
+
+		repo = pg
+	} else if cfg.FileStoragePath != "" {
 		fs, err := repository.NewFileStorage(cfg.FileStoragePath)
 		if err != nil {
 			log.Fatal(err)
@@ -35,7 +45,7 @@ func main() {
 	}
 
 	svc := service.New(repo, cfg.BaseURL)
-	h := handler.New(svc, appLog)
+	h := handler.New(svc, appLog, pg)
 	r := handler.NewRouter(h, appLog)
 
 	if err := http.ListenAndServe(cfg.ServerAddress, r); err != nil {

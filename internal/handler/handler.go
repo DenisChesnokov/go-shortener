@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,16 +15,41 @@ import (
 	"go.uber.org/zap"
 )
 
+// Pinger — интерфейс для проверки соединения с хранилищем.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type Handler struct {
 	svc *service.Shortener
 	log *zap.SugaredLogger
+	pg  Pinger
 }
 
-func New(svc *service.Shortener, log *zap.SugaredLogger) *Handler {
+func New(svc *service.Shortener, log *zap.SugaredLogger, pg Pinger) *Handler {
 	return &Handler{
 		svc: svc,
 		log: log,
+		pg:  pg,
 	}
+}
+
+// GetPing обрабатывает GET /ping: проверяет соединение с БД.
+// Возвращает 200 OK при успехе, 500 Internal Server Error при неуспехе.
+func (h *Handler) GetPing(w http.ResponseWriter, r *http.Request) {
+	if h.pg == nil {
+		h.log.Errorf("database not configured")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.pg.Ping(r.Context()); err != nil {
+		h.log.Errorf("ping failed: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // PostShortenJSON обрабатывает POST /api/shorten: принимает JSON {"url":"..."},
@@ -44,7 +70,17 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), req.URL)
 	if err != nil {
-		log.Printf("shorten failed: %v", err)
+		var alreadyExistsErr *service.AlreadyExistsError
+		if errors.As(err, &alreadyExistsErr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict) // 409
+
+			resp := model.ShortenResponse{Result: alreadyExistsErr.ShortURL}
+			enc := json.NewEncoder(w)
+			enc.Encode(resp)
+			return
+		}
+		h.log.Errorf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -55,8 +91,7 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
-		log.Printf("encode response failed: %v", err)
-		return
+		h.log.Errorf("encode response failed: %v", err)
 	}
 }
 
@@ -75,6 +110,12 @@ func (h *Handler) PostShorten(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.svc.Shorten(r.Context(), longURL)
 	if err != nil {
+		var alreadyExistsErr *service.AlreadyExistsError
+		if errors.As(err, &alreadyExistsErr) {
+			w.WriteHeader(http.StatusConflict) // 409
+			w.Write([]byte(alreadyExistsErr.ShortURL))
+			return
+		}
 		h.log.Errorf("shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -108,4 +149,36 @@ func (h *Handler) GetRedirect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Location", longURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+// PostShortenBatch обрабатывает POST /api/shorten/batch: принимает JSON-массив
+// [{"correlation_id":"...","original_url":"..."}, ...] и возвращает
+// [{"correlation_id":"...","short_url":"..."}, ...] с кодом 201 Created.
+func (h *Handler) PostShortenBatch(w http.ResponseWriter, r *http.Request) {
+	var req []model.BatchRequestItem
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	// Пустой батч — ошибка
+	if len(req) == 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.svc.ShortenBatch(r.Context(), req)
+	if err != nil {
+		h.log.Errorf("batch shorten failed: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		h.log.Errorf("encode batch response failed: %v", err)
+	}
 }

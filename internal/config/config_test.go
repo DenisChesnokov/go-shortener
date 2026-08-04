@@ -72,3 +72,16 @@ func TestParseEnv_FileStoragePath(t *testing.T) {
 			cfg.FileStoragePath, "/tmp/test-storage.json")
 	}
 }
+
+func TestParseEnv_DatabaseDSN(t *testing.T) {
+	dataBaseDSN := "postgres://postgres:postgres@localhost:5432/test?sslmode=disable"
+	t.Setenv("DATABASE_DSN", dataBaseDSN)
+
+	cfg := New()
+	cfg.ParseEnv()
+
+	if cfg.DatabaseDSN != dataBaseDSN {
+		t.Errorf("DatabaseDSN: получили %q, хотим %q",
+			cfg.DatabaseDSN, dataBaseDSN)
+	}
+}
