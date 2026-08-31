@@ -527,6 +527,18 @@ func TestGetUserURLs_WithData(t *testing.T) {
 	if len(urls) != 2 {
 		t.Errorf("кол-во URL: получили %d, хотим 2", len(urls))
 	}
+
+	// Проверяем, что short_url — полный URL с базовым адресом
+	for _, u := range urls {
+		if !strings.HasPrefix(u.ShortURL, "http://localhost:8080/") {
+			t.Errorf("ShortURL должен быть полным URL, получили %q", u.ShortURL)
+			return
+		}
+		if u.OriginalURL == "" {
+			t.Errorf("OriginalURL пустой для записи %q", u.ShortURL)
+			return
+		}
+	}
 }
 
 // TestGetUserURLs_InvalidCookie проверяет 401 при невалидной куке.

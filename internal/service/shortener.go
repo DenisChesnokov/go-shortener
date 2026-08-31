@@ -134,5 +134,21 @@ func generateShortKey() string {
 
 // GetUserURLs возвращает все URL, сокращённые пользователем.
 func (s *Shortener) GetUserURLs(ctx context.Context, userID string) ([]model.UserURL, error) {
-	return s.repo.GetByUserID(ctx, userID)
+	records, err := s.repo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.UserURL, 0, len(records))
+	for _, r := range records {
+		shortURL, err := url.JoinPath(s.baseURL, r.ShortURL)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, model.UserURL{
+			ShortURL:    shortURL,
+			OriginalURL: r.OriginalURL,
+		})
+	}
+	return result, nil
 }
