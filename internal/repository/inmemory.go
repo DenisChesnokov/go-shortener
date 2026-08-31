@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/DenisChesnokov/go-shortener.git/internal/model"
 )
 
 var ErrAlreadyExists = errors.New("short key already exists")
@@ -18,15 +20,22 @@ InMemory — хранилище сокращённых ссылок в памя�
 вставку под одной блокировкой писателя, что исключает состояние гонки
 между проверкой и записью
 */
+
+// UserRecord хранит URL вместе с.userID.
+type UserRecord struct {
+	LongURL string
+	UserID  string
+}
+
 type InMemory struct {
-	mu   sync.RWMutex
-	data map[string]string
+	mu       sync.RWMutex
+	dataUser map[string]UserRecord // key - {LongURL, UserID}
 }
 
 // NewInMemory создаёт пустое хранилище в памяти
 func NewInMemory() *InMemory {
 	return &InMemory{
-		data: make(map[string]string),
+		dataUser: make(map[string]UserRecord),
 	}
 }
 
@@ -35,15 +44,15 @@ func (r *InMemory) Ping(ctx context.Context) error { return nil }
 
 // Save сохраняет соответствие key -> longURL
 // Если ключ уже занят, возвращает ErrAlreadyExists, не перезаписывая значение
-func (r *InMemory) Save(ctx context.Context, key, longURL string) (string, error) {
+func (r *InMemory) Save(ctx context.Context, key, longURL string, userID string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.data[key]; exists {
+	if _, exists := r.dataUser[key]; exists {
 		return "", fmt.Errorf("%w: key %q", ErrAlreadyExists, key)
 	}
 
-	r.data[key] = longURL
+	r.dataUser[key] = UserRecord{LongURL: longURL, UserID: userID}
 	return key, nil
 }
 
@@ -53,29 +62,45 @@ func (r *InMemory) Get(ctx context.Context, key string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	longURL, exists := r.data[key]
+	record, exists := r.dataUser[key]
 	if !exists {
 		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
 
-	return longURL, nil
+	return record.LongURL, nil
 }
 
 // SaveBatch сохраняет множество записей атомарно (под одной блокировкой).
-func (r *InMemory) SaveBatch(ctx context.Context, items map[string]string) error {
+func (r *InMemory) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// Сначала проверяем все ключи на коллизии
 	for key := range items {
-		if _, exists := r.data[key]; exists {
+		if _, exists := r.dataUser[key]; exists {
 			return ErrAlreadyExists
 		}
 	}
 
 	// Затем сохраняем все
 	for key, longURL := range items {
-		r.data[key] = longURL
+		r.dataUser[key] = UserRecord{LongURL: longURL, UserID: userID}
 	}
 	return nil
+}
+
+func (r *InMemory) GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []model.UserURL
+	for key, record := range r.dataUser {
+		if record.UserID == userID {
+			result = append(result, model.UserURL{
+				ShortURL:    key,
+				OriginalURL: record.LongURL,
+			})
+		}
+	}
+	return result, nil
 }

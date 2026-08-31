@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/DenisChesnokov/go-shortener.git/internal/model"
 )
 
 // FileRecord — формат одной записи в файле хранилища.
@@ -15,6 +17,7 @@ type FileRecord struct {
 	UUID        string `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
 }
 
 // FileStorage — реализация репозитория через файл на диске.
@@ -77,7 +80,7 @@ func (fs *FileStorage) load() error {
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, error) {
+func (fs *FileStorage) Save(ctx context.Context, key, longURL string, userID string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -90,6 +93,7 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, e
 		UUID:        strconv.Itoa(fs.counter),
 		ShortURL:    key,
 		OriginalURL: longURL,
+		UserID:      userID,
 	}
 	fs.data[key] = record
 	return key, fs.write(record)
@@ -123,7 +127,7 @@ func (fs *FileStorage) Close() error {
 }
 
 // SaveBatch сохраняет множество записей атомарно.
-func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) error {
+func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -137,19 +141,33 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) e
 	// Добавляем в память + генерим UUID
 	for key, longURL := range items {
 		fs.counter++
-		fs.data[key] = FileRecord{
+		record := FileRecord{
 			UUID:        strconv.Itoa(fs.counter),
 			ShortURL:    key,
 			OriginalURL: longURL,
+			UserID:      userID,
 		}
-	}
-
-	// Дописываем каждую запись в файл (JSONL append)
-	for key := range items {
-		record := fs.data[key]
+		fs.data[key] = record
 		if err := fs.write(record); err != nil {
 			return err
 		}
 	}
+
 	return nil
+}
+
+func (fs *FileStorage) GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	var result []model.UserURL
+	for _, record := range fs.data {
+		if record.UserID == userID {
+			result = append(result, model.UserURL{
+				ShortURL:    record.ShortURL,
+				OriginalURL: record.OriginalURL,
+			})
+		}
+	}
+	return result, nil
 }

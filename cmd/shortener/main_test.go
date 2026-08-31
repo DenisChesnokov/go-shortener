@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/DenisChesnokov/go-shortener.git/internal/auth"
 	"github.com/DenisChesnokov/go-shortener.git/internal/handler"
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
@@ -30,7 +32,8 @@ func newTestRouter() (*chi.Mux, *repository.InMemory, error) {
 	svc := service.New(repo, "http://localhost:8080")
 	log := zap.NewNop().Sugar()
 	h := handler.New(svc, log, nil)
-	return handler.NewRouter(h, log), repo, nil
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	return handler.NewRouter(h, log, jwtMgr), repo, nil
 }
 
 func TestWebhook(t *testing.T) {
@@ -99,7 +102,7 @@ func TestWebhook(t *testing.T) {
 
 			// изолированное состояние хранилища для текущего кейса
 			if tt.seedKey != "" {
-				if _, err := repo.Save(context.Background(), tt.seedKey, tt.seedURL); err != nil {
+				if _, err := repo.Save(context.Background(), tt.seedKey, tt.seedURL, ""); err != nil {
 					t.Fatalf("не удалось подготовить хранилище: %v", err)
 					return
 				}
@@ -441,5 +444,107 @@ func TestBatchShorten(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestGetUserURLs_NoCookie проверяет автосоздание куки.
+func TestGetUserURLs_NoCookie(t *testing.T) {
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	// Без URL должно быть 204
+	if res.StatusCode != http.StatusNoContent {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusNoContent)
+	}
+
+	// Должна быть установлена кука
+	cookies := res.Cookies()
+	var found bool
+	for _, c := range cookies {
+		if c.Name == "user_id" {
+			found = true
+			if c.Value == "" {
+				t.Error("user_id cookie value пустой")
+			}
+		}
+	}
+	if !found {
+		t.Error("cookie user_id не установлена")
+	}
+}
+
+// TestGetUserURLs_WithData проверяет возврат URL пользователя.
+func TestGetUserURLs_WithData(t *testing.T) {
+	r, repo, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	// Создаём URL для пользователя
+	userID := "test-user-abc"
+	if _, err := repo.Save(context.Background(), "k1", "http://example1.com", userID); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := repo.Save(context.Background(), "k2", "http://example2.com", userID); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := repo.Save(context.Background(), "k3", "http://other.com", "other-user"); err != nil {
+		t.Fatalf("Save other: %v", err)
+	}
+
+	// Генерируем валидный JWT для userID
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token, err := jwtMgr.BuildJWTString(userID)
+	if err != nil {
+		t.Fatalf("BuildJWTString: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: token})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusOK)
+	}
+
+	var urls []model.UserURL
+	if err := json.NewDecoder(res.Body).Decode(&urls); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(urls) != 2 {
+		t.Errorf("кол-во URL: получили %d, хотим 2", len(urls))
+	}
+}
+
+// TestGetUserURLs_InvalidCookie проверяет 401 при невалидной куке.
+func TestGetUserURLs_InvalidCookie(t *testing.T) {
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: "invalid-token"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusUnauthorized)
 	}
 }

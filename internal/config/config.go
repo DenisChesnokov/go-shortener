@@ -11,6 +11,7 @@ type Config struct {
 	LogLevel        string
 	FileStoragePath string
 	DatabaseDSN     string
+	JWTSecret       string
 }
 
 /*
@@ -37,6 +38,7 @@ func (c *Config) ParseFlags() {
 	flag.StringVar(&c.LogLevel, "l", c.LogLevel, "log level")
 	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
 	flag.StringVar(&c.DatabaseDSN, "d", c.DatabaseDSN, "Адрес подключения к БД")
+	flag.StringVar(&c.JWTSecret, "jwt-key", "supersecretkey", "JWT secret key")
 
 	flag.Parse()
 }
@@ -67,5 +69,10 @@ func (c *Config) ParseEnv() {
 	dataBaseDSN, exist := os.LookupEnv("DATABASE_DSN")
 	if exist && dataBaseDSN != "" {
 		c.DatabaseDSN = dataBaseDSN
+	}
+
+	jwtSecret, exist := os.LookupEnv("JWT_SECRET")
+	if exist && jwtSecret != "" {
+		c.JWTSecret = jwtSecret
 	}
 }

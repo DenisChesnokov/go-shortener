@@ -72,7 +72,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if _, err := pg.Save(ctx, "key1", "http://example.com"); err != nil {
+	if _, err := pg.Save(ctx, "key1", "http://example.com", ""); err != nil {
 		t.Errorf("Save: %v", err)
 		return
 	}
@@ -87,7 +87,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 	}
 
 	// Дубликат
-	_, err = pg.Save(ctx, "key1", "http://other.com")
+	_, err = pg.Save(ctx, "key1", "http://other.com", "")
 	if err != ErrAlreadyExists {
 		t.Errorf("ожидали ErrAlreadyExists, получили %v", err)
 	}
@@ -124,7 +124,7 @@ func TestPostgres_SaveBatch(t *testing.T) {
 		"batchKey2": "http://yandex.ru",
 	}
 
-	if err := pg.SaveBatch(ctx, items); err != nil {
+	if err := pg.SaveBatch(ctx, items, ""); err != nil {
 		t.Errorf("SaveBatch: %v", err)
 		return
 	}
@@ -136,5 +136,33 @@ func TestPostgres_SaveBatch(t *testing.T) {
 	got2, err := pg.Get(ctx, "batchKey2")
 	if err != nil || got2 != "http://yandex.ru" {
 		t.Errorf("Get batchKey2: получили %q, err %v", got2, err)
+	}
+}
+
+func TestPostgres_GetByUserID(t *testing.T) {
+	pg, cleanup := setupTestPostgres(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	userID := "test-user-123"
+	if _, err := pg.Save(ctx, "u1key1", "http://example1.com", userID); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	if _, err := pg.Save(ctx, "u1key2", "http://example2.com", userID); err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	// чужой URL
+	if _, err := pg.Save(ctx, "u2key1", "http://other.com", "other-user"); err != nil {
+		t.Fatalf("Save 3: %v", err)
+	}
+
+	urls, err := pg.GetByUserID(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetByUserID: %v", err)
+	}
+	if len(urls) != 2 {
+		t.Errorf("GetByUserID: получили %d URL, хотим 2", len(urls))
 	}
 }

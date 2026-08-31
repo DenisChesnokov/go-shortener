@@ -29,9 +29,10 @@ func (e *AlreadyExistsError) Error() string {
 }
 
 type Repository interface {
-	Save(ctx context.Context, key, longURL string) (string, error)
+	Save(ctx context.Context, key, longURL, userID string) (string, error)
 	Get(ctx context.Context, key string) (string, error)
-	SaveBatch(ctx context.Context, items map[string]string) error
+	SaveBatch(ctx context.Context, items map[string]string, userID string) error
+	GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error)
 }
 
 // Shortener содержит бизнес-логику сокращения и разрешения ссылок
@@ -51,12 +52,12 @@ func New(repo Repository, baseURL string) *Shortener {
 // Shorten сохраняет длинный URL и возвращает короткий.
 // Генерирует кандидаты короткого ключа и пытается сохранить их в репозитории,
 // если ключ уже занят, повторяет попытку не более maxAttempts раз
-func (s *Shortener) Shorten(ctx context.Context, longURL string) (string, error) {
+func (s *Shortener) Shorten(ctx context.Context, longURL string, userID string) (string, error) {
 	for range maxAttempts {
 		key := generateShortKey()
 
 		// Save возвращает (existingKey, error)
-		existingKey, err := s.repo.Save(ctx, key, longURL)
+		existingKey, err := s.repo.Save(ctx, key, longURL, userID)
 		if err == nil {
 			shortURL, err := url.JoinPath(s.baseURL, key)
 			if err != nil {
@@ -93,7 +94,7 @@ func (s *Shortener) Resolve(ctx context.Context, key string) (string, error) {
 // ShortenBatch сокращает множество URL за один вызов.
 // Принимает slice BatchRequestItem, возвращает slice BatchResponseItem.
 // Ключи генерирует сервис, репозиторий сохраняет их атомарно.
-func (s *Shortener) ShortenBatch(ctx context.Context, items []model.BatchRequestItem) ([]model.BatchResponseItem, error) {
+func (s *Shortener) ShortenBatch(ctx context.Context, items []model.BatchRequestItem, userID string) ([]model.BatchResponseItem, error) {
 	// map для передачи в репозиторий: key → original_url
 	batch := make(map[string]string, len(items))
 	// Ответ собираем в том же порядке, что и запрос
@@ -115,7 +116,7 @@ func (s *Shortener) ShortenBatch(ctx context.Context, items []model.BatchRequest
 	}
 
 	// Атомарное сохранение всего батча
-	if err := s.repo.SaveBatch(ctx, batch); err != nil {
+	if err := s.repo.SaveBatch(ctx, batch, userID); err != nil {
 		return nil, err
 	}
 
@@ -129,4 +130,9 @@ func generateShortKey() string {
 		b[i] = charset[rand.Intn(len(charset))]
 	}
 	return string(b)
+}
+
+// GetUserURLs возвращает все URL, сокращённые пользователем.
+func (s *Shortener) GetUserURLs(ctx context.Context, userID string) ([]model.UserURL, error) {
+	return s.repo.GetByUserID(ctx, userID)
 }

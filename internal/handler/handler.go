@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/DenisChesnokov/go-shortener.git/internal/middleware"
 	"github.com/DenisChesnokov/go-shortener.git/internal/model"
 	"github.com/DenisChesnokov/go-shortener.git/internal/repository"
 	"github.com/DenisChesnokov/go-shortener.git/internal/service"
@@ -68,7 +69,8 @@ func (h *Handler) PostShortenJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.svc.Shorten(r.Context(), req.URL)
+	userID, _ := middleware.GetUserID(r.Context())
+	shortURL, err := h.svc.Shorten(r.Context(), req.URL, userID)
 	if err != nil {
 		var alreadyExistsErr *service.AlreadyExistsError
 		if errors.As(err, &alreadyExistsErr) {
@@ -107,12 +109,13 @@ func (h *Handler) PostShorten(w http.ResponseWriter, r *http.Request) {
 	}
 
 	longURL := string(bodyBytes)
+	userID, _ := middleware.GetUserID(r.Context())
 
-	shortURL, err := h.svc.Shorten(r.Context(), longURL)
+	shortURL, err := h.svc.Shorten(r.Context(), longURL, userID)
 	if err != nil {
 		var alreadyExistsErr *service.AlreadyExistsError
 		if errors.As(err, &alreadyExistsErr) {
-			w.WriteHeader(http.StatusConflict) // 409
+			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(alreadyExistsErr.ShortURL))
 			return
 		}
@@ -168,7 +171,8 @@ func (h *Handler) PostShortenBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.svc.ShortenBatch(r.Context(), req)
+	userID, _ := middleware.GetUserID(r.Context())
+	resp, err := h.svc.ShortenBatch(r.Context(), req, userID)
 	if err != nil {
 		h.log.Errorf("batch shorten failed: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -181,4 +185,28 @@ func (h *Handler) PostShortenBatch(w http.ResponseWriter, r *http.Request) {
 	if err := enc.Encode(resp); err != nil {
 		h.log.Errorf("encode batch response failed: %v", err)
 	}
+}
+
+func (h *Handler) GetUserURLs(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok || userID == "" {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+
+	urls, err := h.svc.GetUserURLs(r.Context(), userID)
+	if err != nil {
+		h.log.Errorf("get user urls failed: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if len(urls) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.Encode(urls)
 }
