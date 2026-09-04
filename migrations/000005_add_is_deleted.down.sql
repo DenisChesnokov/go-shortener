@@ -1,0 +1,1 @@
+ALTER TABLE shortener DROP COLUMN IF EXISTS is_deleted;

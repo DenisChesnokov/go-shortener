@@ -77,7 +77,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 		return
 	}
 
-	got, err := pg.Get(ctx, "key1")
+	got, _, err := pg.Get(ctx, "key1")
 	if err != nil {
 		t.Errorf("Get: %v", err)
 		return
@@ -93,7 +93,7 @@ func TestPostgres_SaveAndGet(t *testing.T) {
 	}
 
 	// Несуществующий
-	_, err = pg.Get(ctx, "nonexistent")
+	_, _, err = pg.Get(ctx, "nonexistent")
 	if err != ErrNotFound {
 		t.Errorf("ожидали ErrNotFound, получили %v", err)
 	}
@@ -129,11 +129,11 @@ func TestPostgres_SaveBatch(t *testing.T) {
 		return
 	}
 
-	got1, err := pg.Get(ctx, "batchKey1")
+	got1, _, err := pg.Get(ctx, "batchKey1")
 	if err != nil || got1 != "http://example.com" {
 		t.Errorf("Get batchKey1: получили %q, err %v", got1, err)
 	}
-	got2, err := pg.Get(ctx, "batchKey2")
+	got2, _, err := pg.Get(ctx, "batchKey2")
 	if err != nil || got2 != "http://yandex.ru" {
 		t.Errorf("Get batchKey2: получили %q, err %v", got2, err)
 	}

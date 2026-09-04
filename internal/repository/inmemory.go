@@ -23,8 +23,9 @@ InMemory — хранилище сокращённых ссылок в памя�
 
 // UserRecord хранит URL вместе с.userID.
 type UserRecord struct {
-	LongURL string
-	UserID  string
+	LongURL   string
+	UserID    string
+	IsDeleted bool
 }
 
 type InMemory struct {
@@ -58,16 +59,16 @@ func (r *InMemory) Save(ctx context.Context, key, longURL string, userID string)
 
 // Get возвращает оригинальный URL по короткому ключу
 // Если ключ не найден, возвращает ErrNotFound
-func (r *InMemory) Get(ctx context.Context, key string) (string, error) {
+func (r *InMemory) Get(ctx context.Context, key string) (string, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	record, exists := r.dataUser[key]
 	if !exists {
-		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
+		return "", false, fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
 
-	return record.LongURL, nil
+	return record.LongURL, record.IsDeleted, nil
 }
 
 // SaveBatch сохраняет множество записей атомарно (под одной блокировкой).
@@ -95,7 +96,7 @@ func (r *InMemory) GetByUserID(ctx context.Context, userID string) ([]model.User
 
 	var result []model.UserURL
 	for key, record := range r.dataUser {
-		if record.UserID == userID {
+		if record.UserID == userID && !record.IsDeleted {
 			result = append(result, model.UserURL{
 				ShortURL:    key,
 				OriginalURL: record.LongURL,
@@ -103,4 +104,22 @@ func (r *InMemory) GetByUserID(ctx context.Context, userID string) ([]model.User
 		}
 	}
 	return result, nil
+}
+
+func (r *InMemory) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, item := range items {
+		record, exists := r.dataUser[item.ShortURL]
+		if !exists {
+			continue // пропускаем несуществующие
+		}
+		if record.UserID != item.UserID {
+			continue // чужой URL — пропускаем
+		}
+		record.IsDeleted = true
+		r.dataUser[item.ShortURL] = record
+	}
+	return nil
 }

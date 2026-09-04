@@ -29,3 +29,13 @@ type UserURL struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 }
+
+// URLRecord — запись URL с информацией об удалении.
+type URLRecord struct {
+	ShortURL    string
+	OriginalURL string
+	IsDeleted   bool
+}
+
+// DeleteRequest — тело запроса DELETE /api/user/urls.
+type DeleteRequest []string // ["key1", "key2", ...]

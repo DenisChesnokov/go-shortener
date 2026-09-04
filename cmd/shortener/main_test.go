@@ -560,3 +560,70 @@ func TestGetUserURLs_InvalidCookie(t *testing.T) {
 		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusUnauthorized)
 	}
 }
+
+// TestDeleteUserURLs_Accepted проверяет, что DELETE возвращает 202 Accepted.
+func TestDeleteUserURLs_Accepted(t *testing.T) {
+	r, repo, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	userID := "test-user-delete"
+	repo.Save(context.Background(), "delKey1", "http://example1.com", userID)
+	repo.Save(context.Background(), "delKey2", "http://example2.com", userID)
+
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token, _ := jwtMgr.BuildJWTString(userID)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls",
+		strings.NewReader(`["delKey1","delKey2"]`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: token})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusAccepted)
+	}
+}
+
+// TestDeleteUserURLs_Unauthorized проверяет 401 без авторизации.
+func TestDeleteUserURLs_Unauthorized(t *testing.T) {
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls",
+		strings.NewReader(`["delKey1"]`))
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: "invalid-token"})
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestDeleteUserURLs_EmptyBody проверяет 400 на пустом теле.
+func TestDeleteUserURLs_EmptyBody(t *testing.T) {
+	r, _, err := newTestRouter()
+	if err != nil {
+		t.Fatalf("newTestRouter: %v", err)
+	}
+
+	jwtMgr := auth.NewJWTManager("test-secret", time.Hour)
+	token, _ := jwtMgr.BuildJWTString("any-user")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls",
+		strings.NewReader(``))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: token})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}

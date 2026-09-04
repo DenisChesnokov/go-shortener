@@ -18,6 +18,7 @@ type FileRecord struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 	UserID      string `json:"user_id"`
+	IsDeleted   bool   `json:"is_deleted"`
 }
 
 // FileStorage — реализация репозитория через файл на диске.
@@ -100,15 +101,15 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string, userID str
 }
 
 // Get возвращает длинный URL по короткому ключу.
-func (fs *FileStorage) Get(ctx context.Context, key string) (string, error) {
+func (fs *FileStorage) Get(ctx context.Context, key string) (string, bool, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	record, exists := fs.data[key]
 	if !exists {
-		return "", ErrNotFound
+		return "", false, ErrNotFound
 	}
-	return record.OriginalURL, nil
+	return record.OriginalURL, record.IsDeleted, nil
 }
 
 // append одной записи
@@ -162,7 +163,7 @@ func (fs *FileStorage) GetByUserID(ctx context.Context, userID string) ([]model.
 
 	var result []model.UserURL
 	for _, record := range fs.data {
-		if record.UserID == userID {
+		if record.UserID == userID && !record.IsDeleted {
 			result = append(result, model.UserURL{
 				ShortURL:    record.ShortURL,
 				OriginalURL: record.OriginalURL,
@@ -170,4 +171,21 @@ func (fs *FileStorage) GetByUserID(ctx context.Context, userID string) ([]model.
 		}
 	}
 	return result, nil
+}
+
+func (fs *FileStorage) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	for _, item := range items {
+		record, exists := fs.data[item.ShortURL]
+		if !exists || record.UserID != item.UserID {
+			continue
+		}
+		record.IsDeleted = true
+		fs.data[item.ShortURL] = record
+		// Append tombstone в файл
+		fs.write(record)
+	}
+	return nil
 }

@@ -26,7 +26,7 @@ func TestFileStorage_SaveAndGet(t *testing.T) {
 	}
 
 	// Get проверка
-	got, err := fs.Get(context.Background(), "key1")
+	got, _, err := fs.Get(context.Background(), "key1")
 	if err != nil {
 		t.Errorf("Get: %v", err)
 		return
@@ -56,11 +56,11 @@ func TestFileStorage_PersistsAcrossInstances(t *testing.T) {
 	}
 
 	// проверяем, что данные восстановлены
-	got, err := fs2.Get(context.Background(), "key1")
+	got, _, err := fs2.Get(context.Background(), "key1")
 	if err != nil || got != "http://example.com" {
 		t.Errorf("key1: получили %q, err %v", got, err)
 	}
-	got, err = fs2.Get(context.Background(), "key2")
+	got, _, err = fs2.Get(context.Background(), "key2")
 	if err != nil || got != "http://yandex.ru" {
 		t.Errorf("key2: получили %q, err %v", got, err)
 	}

@@ -83,18 +83,19 @@ func (p *PostgresStorage) Save(ctx context.Context, key, longURL string, userID 
 
 // Get возвращает оригинальный URL по короткому ключу.
 // Если ключ не найден — возвращает ErrNotFound.
-func (p *PostgresStorage) Get(ctx context.Context, key string) (string, error) {
+func (p *PostgresStorage) Get(ctx context.Context, key string) (string, bool, error) {
 	var originalURL string
+	var isDeleted bool
 	err := p.pool.QueryRow(ctx,
-		"SELECT original_url FROM shortener WHERE short_url = $1",
-		key).Scan(&originalURL)
+		"SELECT original_url, is_deleted FROM shortener WHERE short_url = $1",
+		key).Scan(&originalURL, &isDeleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNotFound
+			return "", false, ErrNotFound
 		}
-		return "", err
+		return "", false, err
 	}
-	return originalURL, nil
+	return originalURL, isDeleted, nil
 }
 
 func (p *PostgresStorage) Ping(ctx context.Context) error {
@@ -132,7 +133,7 @@ func (p *PostgresStorage) SaveBatch(ctx context.Context, items map[string]string
 
 func (p *PostgresStorage) GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error) {
 	rows, err := p.pool.Query(ctx,
-		"SELECT short_url, original_url FROM shortener WHERE user_id = $1", userID)
+		"SELECT short_url, original_url FROM shortener WHERE user_id = $1 AND is_deleted = FALSE", userID)
 	if err != nil {
 		return nil, err
 	}
@@ -150,4 +151,27 @@ func (p *PostgresStorage) GetByUserID(ctx context.Context, userID string) ([]mod
 		return nil, err
 	}
 	return result, nil
+}
+
+func (p *PostgresStorage) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// Генерируем: UPDATE shortener SET is_deleted = TRUE WHERE (short_url, user_id) IN (($1, $2), ($3, $4), ...)
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE shortener SET is_deleted = TRUE WHERE (short_url, user_id) IN (")
+
+	args := make([]interface{}, 0, len(items)*2)
+	for i, item := range items {
+		if i > 0 {
+			queryBuilder.WriteString(", ")
+		}
+		queryBuilder.WriteString(fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
+		args = append(args, item.ShortURL, item.UserID)
+	}
+	queryBuilder.WriteString(")")
+
+	_, err := p.pool.Exec(ctx, queryBuilder.String(), args...)
+	return err
 }

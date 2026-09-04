@@ -37,6 +37,7 @@ func NewRouter(h *Handler, log *zap.SugaredLogger, jwtMgr *auth.JWTManager) *chi
 	r.Get("/{shortLink}", h.GetRedirect)
 	r.Post("/api/shorten/batch", h.PostShortenBatch)
 	r.Get("/api/user/urls", h.GetUserURLs)
+	r.Delete("/api/user/urls", h.DeleteUserURLs)
 
 	return r
 }

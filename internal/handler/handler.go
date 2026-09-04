@@ -140,6 +140,11 @@ func (h *Handler) GetRedirect(w http.ResponseWriter, r *http.Request) {
 
 	longURL, err := h.svc.Resolve(r.Context(), key)
 	if err != nil {
+		if errors.Is(err, service.ErrDeleted) {
+			w.WriteHeader(http.StatusGone) // 410
+			return
+		}
+
 		if errors.Is(err, repository.ErrNotFound) {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
@@ -209,4 +214,27 @@ func (h *Handler) GetUserURLs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.Encode(urls)
+}
+
+func (h *Handler) DeleteUserURLs(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok || userID == "" {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+
+	var req model.DeleteRequest
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	if len(req) == 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	h.svc.DeleteURLs(req, userID)
+	w.WriteHeader(http.StatusAccepted) // 202
 }
