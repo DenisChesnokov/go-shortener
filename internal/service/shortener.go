@@ -18,7 +18,7 @@ const maxAttempts = 10
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 var ErrKeyGeneration = errors.New("failed to generate unique short key")
-var ErrDeleted = errors.New("Url was deleted befor")
+var ErrDeleted = errors.New("url was deleted befor")
 
 // AlreadyExistsError возвращается, когда URL уже был сокращён ранее.
 // Содержит готовый короткий URL для ответа клиенту (409 Conflict).

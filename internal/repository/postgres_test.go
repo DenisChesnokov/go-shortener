@@ -17,8 +17,8 @@ func setupTestPostgres(t *testing.T) (*PostgresStorage, func()) {
 	ctx := context.Background()
 
 	// Подаём образ postgres:16-alpine
-	pgContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("postgres:16-alpine"),
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
 		postgres.WithDatabase("test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
