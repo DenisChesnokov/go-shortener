@@ -39,3 +39,8 @@ type URLRecord struct {
 
 // DeleteRequest — тело запроса DELETE /api/user/urls.
 type DeleteRequest []string // ["key1", "key2", ...]
+
+type DeleteTask struct {
+	ShortURL string
+	UserID   string
+}

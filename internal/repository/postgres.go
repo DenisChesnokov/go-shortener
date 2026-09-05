@@ -153,7 +153,7 @@ func (p *PostgresStorage) GetByUserID(ctx context.Context, userID string) ([]mod
 	return result, nil
 }
 
-func (p *PostgresStorage) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+func (p *PostgresStorage) MarkDeleted(ctx context.Context, items []model.DeleteTask) error {
 	if len(items) == 0 {
 		return nil
 	}

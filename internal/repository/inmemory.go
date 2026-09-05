@@ -106,7 +106,7 @@ func (r *InMemory) GetByUserID(ctx context.Context, userID string) ([]model.User
 	return result, nil
 }
 
-func (r *InMemory) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+func (r *InMemory) MarkDeleted(ctx context.Context, items []model.DeleteTask) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

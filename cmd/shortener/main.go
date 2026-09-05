@@ -47,6 +47,8 @@ func main() {
 	}
 
 	svc := service.New(repo, cfg.BaseURL)
+	defer svc.Close()
+
 	h := handler.New(svc, appLog, pg)
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, 24*time.Hour)
 	r := handler.NewRouter(h, appLog, jwtMgr)

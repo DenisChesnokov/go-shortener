@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"math/rand"
 	"net/url"
 	"time"
@@ -26,11 +27,6 @@ type AlreadyExistsError struct {
 	ShortURL string
 }
 
-type deleteRequest struct {
-	shortURL string
-	userID   string
-}
-
 func (e *AlreadyExistsError) Error() string {
 	return "url already exists"
 }
@@ -40,25 +36,28 @@ type Repository interface {
 	Get(ctx context.Context, key string) (string, bool, error)
 	SaveBatch(ctx context.Context, items map[string]string, userID string) error
 	GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error)
-	MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error // мягкое удаление
+	MarkDeleted(ctx context.Context, items []model.DeleteTask) error // мягкое удаление
 }
 
 // Shortener содержит бизнес-логику сокращения и разрешения ссылок
 type Shortener struct {
 	repo       Repository
 	baseURL    string
-	deleteChan chan deleteRequest
+	deleteChan chan model.DeleteTask
+	cancel     context.CancelFunc
 }
 
 // New создаёт Shortener с заданным репозиторием и базовым адресом коротких ссылок
 // инициализирует deleteChan и запускает горутину startDeleteWorker.
 func New(repo Repository, baseURL string) *Shortener {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Shortener{
 		repo:       repo,
 		baseURL:    baseURL,
-		deleteChan: make(chan deleteRequest, 1000),
+		deleteChan: make(chan model.DeleteTask, 1000),
+		cancel:     cancel,
 	}
-	go s.startDeleteWorker(context.Background())
+	go s.startDeleteWorker(ctx)
 	return s
 }
 
@@ -175,12 +174,12 @@ func (s *Shortener) GetUserURLs(ctx context.Context, userID string) ([]model.Use
 
 func (s *Shortener) startDeleteWorker(ctx context.Context) {
 	ticker := time.NewTicker(100 * time.Millisecond)
-	batch := make([]struct{ ShortURL, UserID string }, 0, 100)
+	batch := make([]model.DeleteTask, 0, 100)
 
 	for {
 		select {
 		case req := <-s.deleteChan:
-			batch = append(batch, struct{ ShortURL, UserID string }{req.shortURL, req.userID})
+			batch = append(batch, model.DeleteTask{ShortURL: req.ShortURL, UserID: req.UserID})
 			if len(batch) >= 100 {
 				s.repo.MarkDeleted(ctx, batch) // один запрос на 100 записей
 				batch = batch[:0]
@@ -202,7 +201,16 @@ func (s *Shortener) startDeleteWorker(ctx context.Context) {
 // DeleteURLs принимает список shortURL иuserID и помещает их в канал асинхронного удаления.
 // Возвращает 202 сразу, не дожидаясь фактического удаления.
 func (s *Shortener) DeleteURLs(shortURLs []string, userID string) {
-	for _, url := range shortURLs {
-		s.deleteChan <- deleteRequest{shortURL: url, userID: userID}
+	for _, key := range shortURLs {
+		select {
+		case s.deleteChan <- model.DeleteTask{ShortURL: key, UserID: userID}:
+		default:
+			log.Printf("warning: delete buffer full, dropping task key=%s userID=%s", key, userID)
+		}
 	}
+}
+
+// Close останавливает worker и освобождает ресурсы.
+func (s *Shortener) Close() {
+	s.cancel()
 }

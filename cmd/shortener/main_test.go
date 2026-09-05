@@ -541,7 +541,7 @@ func TestGetUserURLs_WithData(t *testing.T) {
 	}
 }
 
-// TestGetUserURLs_InvalidCookie проверяет 401 при невалидной куке.
+// TestGetUserURLs_InvalidCookie
 func TestGetUserURLs_InvalidCookie(t *testing.T) {
 	r, _, err := newTestRouter()
 	if err != nil {
@@ -556,8 +556,10 @@ func TestGetUserURLs_InvalidCookie(t *testing.T) {
 	res := rec.Result()
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusUnauthorized)
+	// При невалидной куке middleware перевыпускает новую сессию
+	// → новый пользователь без URL → 204 NoContent
+	if res.StatusCode != http.StatusNoContent {
+		t.Errorf("status: получили %d, хотим %d", res.StatusCode, http.StatusNoContent)
 	}
 }
 
@@ -587,7 +589,7 @@ func TestDeleteUserURLs_Accepted(t *testing.T) {
 	}
 }
 
-// TestDeleteUserURLs_Unauthorized проверяет 401 без авторизации.
+// TestDeleteUserURLs_Unauthorized
 func TestDeleteUserURLs_Unauthorized(t *testing.T) {
 	r, _, err := newTestRouter()
 	if err != nil {
@@ -596,13 +598,14 @@ func TestDeleteUserURLs_Unauthorized(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls",
 		strings.NewReader(`["delKey1"]`))
-	req.AddCookie(&http.Cookie{Name: "user_id", Value: "invalid-token"})
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status: got %d, want %d", rec.Code, http.StatusUnauthorized)
+	// При невалидной куке middleware перевыпускает новую сессию
+	// → DELETE отрабатывает с 202 Accepted
+	if rec.Code != http.StatusAccepted {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusAccepted)
 	}
 }
 

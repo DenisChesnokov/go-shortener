@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"os"
 )
@@ -38,7 +40,7 @@ func (c *Config) ParseFlags() {
 	flag.StringVar(&c.LogLevel, "l", c.LogLevel, "log level")
 	flag.StringVar(&c.FileStoragePath, "f", c.FileStoragePath, "Путь до файла с хранилищем URL")
 	flag.StringVar(&c.DatabaseDSN, "d", c.DatabaseDSN, "Адрес подключения к БД")
-	flag.StringVar(&c.JWTSecret, "jwt-key", "supersecretkey", "JWT secret key")
+	flag.StringVar(&c.JWTSecret, "jwt-key", "", "JWT secret key")
 
 	flag.Parse()
 }
@@ -74,5 +76,15 @@ func (c *Config) ParseEnv() {
 	jwtSecret, exist := os.LookupEnv("JWT_SECRET")
 	if exist && jwtSecret != "" {
 		c.JWTSecret = jwtSecret
+	}
+
+	// Если секрет не задан — генерируем случайный
+	if c.JWTSecret == "" {
+		bytes := make([]byte, 32)
+		if _, err := rand.Read(bytes); err != nil {
+			c.JWTSecret = "default-secret-change-me"
+			return
+		}
+		c.JWTSecret = hex.EncodeToString(bytes)
 	}
 }

@@ -173,7 +173,7 @@ func (fs *FileStorage) GetByUserID(ctx context.Context, userID string) ([]model.
 	return result, nil
 }
 
-func (fs *FileStorage) MarkDeleted(ctx context.Context, items []struct{ ShortURL, UserID string }) error {
+func (fs *FileStorage) MarkDeleted(ctx context.Context, items []model.DeleteTask) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 

@@ -46,9 +46,23 @@ func CookieAuth(jwtMgr *auth.JWTManager) func(http.Handler) http.Handler {
 			// Кука есть — парсим
 			userID, err := jwtMgr.ParseToken(cookie.Value)
 			if err != nil {
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				// Невалидная/просроченная кука — генерируем нового пользователя
+				userID = uuid.New().String()
+			}
+
+			// Ставим куку (перевыпускаем при любом раскладе — и при ошибке и при успехе)
+			tokenString, err := jwtMgr.BuildJWTString(userID)
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
+
+			http.SetCookie(w, &http.Cookie{
+				Name:     "user_id",
+				Value:    tokenString,
+				Path:     "/",
+				HttpOnly: true,
+			})
 
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
