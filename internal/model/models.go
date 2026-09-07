@@ -23,3 +23,24 @@ type BatchResponseItem struct {
 	CorrelationID string `json:"correlation_id"`
 	ShortURL      string `json:"short_url"`
 }
+
+// UserURL — элемент ответа GET /api/user/urls.
+type UserURL struct {
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+// URLRecord — запись URL с информацией об удалении.
+type URLRecord struct {
+	ShortURL    string
+	OriginalURL string
+	IsDeleted   bool
+}
+
+// DeleteRequest — тело запроса DELETE /api/user/urls.
+type DeleteRequest []string // ["key1", "key2", ...]
+
+type DeleteTask struct {
+	ShortURL string
+	UserID   string
+}

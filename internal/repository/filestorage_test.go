@@ -20,13 +20,13 @@ func TestFileStorage_SaveAndGet(t *testing.T) {
 	}
 
 	// первый Save
-	if _, err := fs.Save(context.Background(), "key1", "http://example.com"); err != nil {
+	if _, err := fs.Save(context.Background(), "key1", "http://example.com", ""); err != nil {
 		t.Errorf("Save: %v", err)
 		return
 	}
 
 	// Get проверка
-	got, err := fs.Get(context.Background(), "key1")
+	got, _, err := fs.Get(context.Background(), "key1")
 	if err != nil {
 		t.Errorf("Get: %v", err)
 		return
@@ -46,8 +46,8 @@ func TestFileStorage_PersistsAcrossInstances(t *testing.T) {
 		t.Fatalf("NewFileStorage (fs1): %v", err)
 	}
 
-	fs1.Save(context.Background(), "key1", "http://example.com")
-	fs1.Save(context.Background(), "key2", "http://yandex.ru")
+	fs1.Save(context.Background(), "key1", "http://example.com", "")
+	fs1.Save(context.Background(), "key2", "http://yandex.ru", "")
 
 	// открываем новое хранилище с тем же файлом (имитация рестарта)
 	fs2, err := NewFileStorage(path)
@@ -56,17 +56,17 @@ func TestFileStorage_PersistsAcrossInstances(t *testing.T) {
 	}
 
 	// проверяем, что данные восстановлены
-	got, err := fs2.Get(context.Background(), "key1")
+	got, _, err := fs2.Get(context.Background(), "key1")
 	if err != nil || got != "http://example.com" {
 		t.Errorf("key1: получили %q, err %v", got, err)
 	}
-	got, err = fs2.Get(context.Background(), "key2")
+	got, _, err = fs2.Get(context.Background(), "key2")
 	if err != nil || got != "http://yandex.ru" {
 		t.Errorf("key2: получили %q, err %v", got, err)
 	}
 
 	// UUID продолжается — new запись должна получить uuid=3
-	if _, err := fs2.Save(context.Background(), "key3", "http://mail.ru"); err != nil {
+	if _, err := fs2.Save(context.Background(), "key3", "http://mail.ru", ""); err != nil {
 		t.Fatalf("Save key3: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestFileStorage_FileFormat(t *testing.T) {
 	path := filepath.Join(tmpDir, "storage.json")
 
 	fs, _ := NewFileStorage(path)
-	fs.Save(context.Background(), "key1", "http://example.com")
+	fs.Save(context.Background(), "key1", "http://example.com", "")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -131,5 +131,34 @@ func TestFileStorage_FileFormat(t *testing.T) {
 	if strings.HasPrefix(trimmed, "[") || strings.HasSuffix(trimmed, "]") {
 		t.Errorf("файл выглядит как JSON-массив, а ожидается JSONL.\nСодержимое файла:\n%s", body)
 		return
+	}
+}
+
+func TestFileStorage_GetByUserID(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "storage.json")
+
+	fs, err := NewFileStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if _, err := fs.Save(ctx, "u1k1", "http://example1.com", "user-1"); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	if _, err := fs.Save(ctx, "u1k2", "http://example2.com", "user-1"); err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if _, err := fs.Save(ctx, "u2k1", "http://other.com", "user-2"); err != nil {
+		t.Fatalf("Save 3: %v", err)
+	}
+
+	urls, err := fs.GetByUserID(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("GetByUserID: %v", err)
+	}
+	if len(urls) != 2 {
+		t.Errorf("GetByUserID: получили %d URL, хотим 2", len(urls))
 	}
 }

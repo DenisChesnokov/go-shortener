@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/DenisChesnokov/go-shortener.git/internal/model"
 )
 
 // FileRecord — формат одной записи в файле хранилища.
@@ -15,6 +17,8 @@ type FileRecord struct {
 	UUID        string `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
+	IsDeleted   bool   `json:"is_deleted"`
 }
 
 // FileStorage — реализация репозитория через файл на диске.
@@ -77,7 +81,7 @@ func (fs *FileStorage) load() error {
 }
 
 // Save сохраняет длинный URL под коротким ключом.
-func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, error) {
+func (fs *FileStorage) Save(ctx context.Context, key, longURL string, userID string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -90,21 +94,22 @@ func (fs *FileStorage) Save(ctx context.Context, key, longURL string) (string, e
 		UUID:        strconv.Itoa(fs.counter),
 		ShortURL:    key,
 		OriginalURL: longURL,
+		UserID:      userID,
 	}
 	fs.data[key] = record
 	return key, fs.write(record)
 }
 
 // Get возвращает длинный URL по короткому ключу.
-func (fs *FileStorage) Get(ctx context.Context, key string) (string, error) {
+func (fs *FileStorage) Get(ctx context.Context, key string) (string, bool, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	record, exists := fs.data[key]
 	if !exists {
-		return "", ErrNotFound
+		return "", false, ErrNotFound
 	}
-	return record.OriginalURL, nil
+	return record.OriginalURL, record.IsDeleted, nil
 }
 
 // append одной записи
@@ -123,7 +128,7 @@ func (fs *FileStorage) Close() error {
 }
 
 // SaveBatch сохраняет множество записей атомарно.
-func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) error {
+func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -137,19 +142,50 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string) e
 	// Добавляем в память + генерим UUID
 	for key, longURL := range items {
 		fs.counter++
-		fs.data[key] = FileRecord{
+		record := FileRecord{
 			UUID:        strconv.Itoa(fs.counter),
 			ShortURL:    key,
 			OriginalURL: longURL,
+			UserID:      userID,
 		}
-	}
-
-	// Дописываем каждую запись в файл (JSONL append)
-	for key := range items {
-		record := fs.data[key]
+		fs.data[key] = record
 		if err := fs.write(record); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (fs *FileStorage) GetByUserID(ctx context.Context, userID string) ([]model.UserURL, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	var result []model.UserURL
+	for _, record := range fs.data {
+		if record.UserID == userID && !record.IsDeleted {
+			result = append(result, model.UserURL{
+				ShortURL:    record.ShortURL,
+				OriginalURL: record.OriginalURL,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (fs *FileStorage) MarkDeleted(ctx context.Context, items []model.DeleteTask) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	for _, item := range items {
+		record, exists := fs.data[item.ShortURL]
+		if !exists || record.UserID != item.UserID {
+			continue
+		}
+		record.IsDeleted = true
+		fs.data[item.ShortURL] = record
+		// Append tombstone в файл
+		fs.write(record)
 	}
 	return nil
 }

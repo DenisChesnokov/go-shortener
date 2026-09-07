@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/DenisChesnokov/go-shortener.git/internal/auth"
 	"github.com/DenisChesnokov/go-shortener.git/internal/config"
 	"github.com/DenisChesnokov/go-shortener.git/internal/handler"
 	"github.com/DenisChesnokov/go-shortener.git/internal/logger"
@@ -45,8 +47,11 @@ func main() {
 	}
 
 	svc := service.New(repo, cfg.BaseURL)
+	defer svc.Close()
+
 	h := handler.New(svc, appLog, pg)
-	r := handler.NewRouter(h, appLog)
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, 24*time.Hour)
+	r := handler.NewRouter(h, appLog, jwtMgr)
 
 	if err := http.ListenAndServe(cfg.ServerAddress, r); err != nil {
 		log.Fatal(err)
